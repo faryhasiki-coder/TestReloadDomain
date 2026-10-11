@@ -1,0 +1,5 @@
+{
+  "name": "Faryhasiki.PlaySessions.Runtime",
+  "rootNamespace": "Faryhasiki.PlaySessions",
+  "references": ["Faryhasiki.PlaySessions.Core"]
+}

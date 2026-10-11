@@ -1,0 +1,9 @@
+{
+  "name": "com.faryhasiki.play-sessions",
+  "version": "0.1.0",
+  "displayName": "Play Sessions",
+  "description": "Explicit Play session ownership, lifecycle adapters and scoped diagnostics for projects with Domain Reload disabled.",
+  "unity": "6000.3",
+  "author": { "name": "faryhasiki" },
+  "keywords": ["editor", "domain-reload", "lifecycle"]
+}

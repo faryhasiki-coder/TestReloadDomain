@@ -1,0 +1,5 @@
+{
+  "name": "PlaySessionDemo.Editor",
+  "references": ["PlaySessionDemo", "Faryhasiki.PlaySessions.Core", "Faryhasiki.PlaySessions.Runtime", "Faryhasiki.PlaySessions.Editor"],
+  "includePlatforms": ["Editor"]
+}
