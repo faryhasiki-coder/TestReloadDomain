@@ -6,6 +6,8 @@ using Faryhasiki.PlaySessions.Editor;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEngine.TestTools;
+using BeforeWallet = PlaySessionDemo.CodeComparison.Before.CoinWallet;
+using AfterWallet = PlaySessionDemo.CodeComparison.After.CoinWallet;
 
 namespace PlaySessionDemo.Tests
 {
@@ -67,6 +69,27 @@ namespace PlaySessionDemo.Tests
                 Assert.That(DemoSignals.SubscriberCount, Is.Zero);
                 Assert.That(DemoLease.LiveCount, Is.Zero);
                 Assert.That(DemoState.Current, Is.Null);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator CoinSampleShowsActualBeforeAndAfterAcrossFastPlay()
+        {
+            var originalCoins = BeforeWallet.Coins;
+            for (var cycle = 0; cycle < 2; cycle++)
+            {
+                yield return new EnterPlayMode(false);
+                Assert.That(PlaySessionRuntime.IsReady, Is.True);
+                Assert.That(BeforeWallet.Coins, Is.EqualTo(originalCoins + cycle * 3));
+                Assert.That(AfterWallet.Coins, Is.Zero, "The registered reset must run before the scene starts.");
+                for (var coin = 0; coin < 3; coin++)
+                {
+                    BeforeWallet.CollectCoin();
+                    AfterWallet.CollectCoin();
+                }
+                Assert.That(BeforeWallet.Coins, Is.EqualTo(originalCoins + (cycle + 1) * 3));
+                Assert.That(AfterWallet.Coins, Is.EqualTo(3));
+                yield return new ExitPlayMode();
             }
         }
 

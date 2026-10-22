@@ -1,0 +1,6 @@
+{
+  "name": "PlaySessionDemo.Before",
+  "rootNamespace": "PlaySessionDemo.CodeComparison.Before",
+  "references": [],
+  "noEngineReferences": true
+}

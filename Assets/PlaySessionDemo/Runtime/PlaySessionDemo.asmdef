@@ -1,5 +1,5 @@
 {
   "name": "PlaySessionDemo",
   "rootNamespace": "PlaySessionDemo",
-  "references": ["Faryhasiki.PlaySessions.Core", "Faryhasiki.PlaySessions.Runtime"]
+  "references": ["Faryhasiki.PlaySessions.Core", "Faryhasiki.PlaySessions.Runtime", "PlaySessionDemo.Before"]
 }

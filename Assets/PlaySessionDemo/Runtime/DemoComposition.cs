@@ -17,6 +17,9 @@ namespace PlaySessionDemo
 
         public void Configure(SessionPlan plan)
         {
+            // 最小接入样例：插件在每次会话启动时调用业务代码明确提供的重置函数。
+            plan.Add("sample.wallet", _ => { }, reset: CodeComparison.After.CoinWallet.ResetForPlay);
+
             plan.Add("demo.counter", scope =>
             {
                 DemoState.Current = new DemoModel(scope);

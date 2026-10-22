@@ -1,5 +1,15 @@
 # Play Sessions 演示
 
+## 先看最小源码对比：捡金币
+
+入口：`Tools > Play Sessions > Demo > Open Coin Code Comparison`。
+
+两边执行相同的 `CollectCoin() => Coins++`。在当前 Domain Reload 关闭、Scene Reload 开启的设置下，拾取几枚金币，再停止并再次 Play：未接入版保留上次值，接入版从 0 开始。Game View 同时展示代码和数值。
+
+具体增加了哪些代码、为何需要这些代码，见 [源码差异说明](Runtime/CodeComparison/README.md)。
+
+## 原有完整生命周期演示
+
 入口：`Tools > Play Sessions > Demo > Open Demo Scene`。场景：`Assets/PlaySessionDemo/Scenes/PlaySessionDemo.unity`。
 
 1. 使用 `Enable Fast Play (Domain Reload Off)`，打开 Monitor，然后 Play。
