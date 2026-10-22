@@ -1,0 +1,29 @@
+# Unity generated data
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/[Bb]uild/
+/[Bb]uilds/
+/MemoryCaptures/
+/Recordings/
+
+# IDE generated files
+/.vs/
+/*.csproj
+/*.sln
+/*.slnx
+/*.pidb
+/*.suo
+/*.user
+/*.userprefs
+
+# Agent temporary and delivery artifacts
+/work/
+/outputs/
+
+# Local secrets
+.env
+.env.*
+!.env.example
