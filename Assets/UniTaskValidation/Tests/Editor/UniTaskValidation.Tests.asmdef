@@ -1,0 +1,7 @@
+{
+  "name": "UniTaskValidation.Tests",
+  "references": ["UniTask"],
+  "includePlatforms": ["Editor"],
+  "optionalUnityReferences": ["TestAssemblies"],
+  "autoReferenced": false
+}

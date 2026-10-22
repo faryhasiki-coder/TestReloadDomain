@@ -1,0 +1,7 @@
+{
+  "name": "MathematicsValidation.Tests",
+  "references": ["Unity.Mathematics"],
+  "includePlatforms": ["Editor"],
+  "optionalUnityReferences": ["TestAssemblies"],
+  "autoReferenced": false
+}
