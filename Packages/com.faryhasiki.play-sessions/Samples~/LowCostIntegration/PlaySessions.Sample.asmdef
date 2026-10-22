@@ -1,0 +1,4 @@
+{
+  "name": "PlaySessions.Sample",
+  "references": ["Faryhasiki.PlaySessions.Core"]
+}

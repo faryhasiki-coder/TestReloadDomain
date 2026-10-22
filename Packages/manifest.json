@@ -1,4 +1,5 @@
 {
+  "testables": ["com.faryhasiki.play-sessions"],
   "dependencies": {
     "com.coplaydev.unity-mcp": "https://github.com/CoplayDev/unity-mcp.git?path=/MCPForUnity#v10.3.0",
     "com.unity.ai.assistant": "2.20.0-pre.2",

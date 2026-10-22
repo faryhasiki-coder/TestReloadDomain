@@ -1,0 +1,6 @@
+{
+  "name": "Faryhasiki.PlaySessions.Editor",
+  "rootNamespace": "Faryhasiki.PlaySessions.Editor",
+  "references": ["Faryhasiki.PlaySessions.Core", "Faryhasiki.PlaySessions.Runtime"],
+  "includePlatforms": ["Editor"]
+}

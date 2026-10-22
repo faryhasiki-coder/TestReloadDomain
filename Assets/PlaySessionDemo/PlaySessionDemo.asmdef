@@ -1,0 +1,4 @@
+{
+  "name": "PlaySessionDemo",
+  "references": ["Faryhasiki.PlaySessions.Core", "Faryhasiki.PlaySessions.Runtime", "Unity.InputSystem"]
+}

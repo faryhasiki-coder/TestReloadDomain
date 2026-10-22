@@ -1,0 +1,7 @@
+{
+  "name": "PlaySessionDemo.Tests",
+  "references": ["PlaySessionDemo", "Faryhasiki.PlaySessions.Core", "Faryhasiki.PlaySessions.Runtime", "Faryhasiki.PlaySessions.Editor", "Unity.InputSystem"],
+  "includePlatforms": ["Editor"],
+  "optionalUnityReferences": ["TestAssemblies"],
+  "autoReferenced": false
+}

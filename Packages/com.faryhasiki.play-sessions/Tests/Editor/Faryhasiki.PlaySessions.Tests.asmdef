@@ -1,0 +1,9 @@
+{
+  "name": "Faryhasiki.PlaySessions.Tests",
+  "references": ["Faryhasiki.PlaySessions.Core", "Faryhasiki.PlaySessions.Runtime", "Faryhasiki.PlaySessions.Editor"],
+  "includePlatforms": ["Editor"],
+  "optionalUnityReferences": ["TestAssemblies"],
+  "overrideReferences": true,
+  "precompiledReferences": ["nunit.framework.dll", "PlaySessions.LegacyFixture.dll"],
+  "autoReferenced": false
+}

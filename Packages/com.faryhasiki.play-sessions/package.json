@@ -1,0 +1,9 @@
+{
+  "name": "com.faryhasiki.play-sessions",
+  "version": "0.1.0",
+  "displayName": "Play Sessions",
+  "description": "Explicit, auditable session lifecycle for the Unity Editor with Domain Reload disabled.",
+  "unity": "6000.3",
+  "author": { "name": "Faryhasiki" },
+  "samples": [{ "displayName": "Low Cost Integration", "description": "New code and unchanged legacy code with a separate adapter.", "path": "Samples~/LowCostIntegration" }]
+}
