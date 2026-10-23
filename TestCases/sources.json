@@ -80,6 +80,184 @@
         "Assets/Scripts/GenerateFood.cs",
         "Assets/Scripts/GenerateSpike.cs"
       ]
+    },
+    {
+      "id": "UNITY-01",
+      "name": "ExecuteAlways / ExecuteInEditMode",
+      "kind": "engine-source-case",
+      "unity": "6000.3.8f1",
+      "integrationPackage": "com.yongshi.easyreloadguard",
+      "integrationPackageVersion": "0.1.0",
+      "specification": "TestCases/Cases/06-ExecuteAlways.md",
+      "source": "Assets/DomainReloadCases/Runtime/ExecuteAlwaysCaseCounter.cs",
+      "tests": "Assets/DomainReloadCases/Tests/Editor/ExecuteAlwaysTests.cs",
+      "scene": "Assets/DomainReloadCases/ExecuteAlways/ExecuteAlwaysCase.unity",
+      "prefab": "Assets/DomainReloadCases/ExecuteAlways/ExecuteAlwaysCase.prefab",
+      "existingCaseIds": [
+        "EA-01",
+        "EA-02",
+        "EA-03",
+        "EA-04",
+        "EA-05"
+      ],
+      "plannedCaseIds": [
+        "EA-06",
+        "EA-07",
+        "EA-08"
+      ],
+      "status": "specification-updated-not-executed-this-update"
+    },
+    {
+      "id": "UNITY-02",
+      "name": "Static state and state roots",
+      "kind": "engine-source-case",
+      "unity": "6000.3.8f1",
+      "integrationPackage": "com.yongshi.easyreloadguard",
+      "integrationPackageVersion": "0.1.0",
+      "specification": "TestCases/Cases/07-StateOwnership.md",
+      "source": "Assets/DomainReloadCases/Runtime/StateOwnershipCase.cs",
+      "tests": "Assets/DomainReloadCases/Tests/Editor/StateOwnershipTests.cs",
+      "representativeCaseIds": [
+        "ST-01",
+        "ST-02",
+        "ST-03",
+        "ST-04",
+        "ST-05",
+        "OBJ-01"
+      ],
+      "testMethodCount": 6,
+      "status": "implemented-not-compiled-or-executed",
+      "coverage": "Representative scope and remaining manual/planned cases are detailed in the specification."
+    },
+    {
+      "id": "UNITY-03",
+      "name": "Object fields and lifetimes",
+      "kind": "engine-source-case",
+      "unity": "6000.3.8f1",
+      "integrationPackage": "com.yongshi.easyreloadguard",
+      "integrationPackageVersion": "0.1.0",
+      "specification": "TestCases/Cases/08-ObjectLifetime.md",
+      "source": "Assets/DomainReloadCases/Runtime/ObjectLifetimeProbe.cs",
+      "tests": "Assets/DomainReloadCases/Tests/Editor/ObjectLifetimeTests.cs",
+      "representativeCaseIds": [
+        "OBJ-02",
+        "OBJ-03"
+      ],
+      "testMethodCount": 3,
+      "status": "implemented-not-compiled-or-executed",
+      "coverage": "Representative scope and remaining manual/planned cases are detailed in the specification."
+    },
+    {
+      "id": "UNITY-04",
+      "name": "ScriptableObject assets and runtime copies",
+      "kind": "engine-source-case",
+      "unity": "6000.3.8f1",
+      "integrationPackage": "com.yongshi.easyreloadguard",
+      "integrationPackageVersion": "0.1.0",
+      "specification": "TestCases/Cases/09-ScriptableObject.md",
+      "source": "Assets/DomainReloadCases/Runtime/ScriptableStateCase.cs",
+      "tests": "Assets/DomainReloadCases/Tests/Editor/ScriptableStateTests.cs",
+      "representativeCaseIds": [
+        "SO-01",
+        "SO-02"
+      ],
+      "testMethodCount": 2,
+      "status": "implemented-not-compiled-or-executed",
+      "coverage": "Representative scope and remaining manual/planned cases are detailed in the specification."
+    },
+    {
+      "id": "UNITY-05",
+      "name": "Events and external work",
+      "kind": "engine-source-case",
+      "unity": "6000.3.8f1",
+      "integrationPackage": "com.yongshi.easyreloadguard",
+      "integrationPackageVersion": "0.1.0",
+      "specification": "TestCases/Cases/10-ExternalWork.md",
+      "source": "Assets/DomainReloadCases/Runtime/ExternalWorkCase.cs",
+      "tests": "Assets/DomainReloadCases/Tests/Editor/ExternalWorkTests.cs",
+      "representativeCaseIds": [
+        "EV-01",
+        "EV-02",
+        "EV-03",
+        "ASYNC-01",
+        "ASYNC-02",
+        "ASYNC-03"
+      ],
+      "testMethodCount": 10,
+      "status": "implemented-not-compiled-or-executed",
+      "coverage": "Representative scope and remaining manual/planned cases are detailed in the specification."
+    },
+    {
+      "id": "UNITY-06",
+      "name": "Native and Unity resource ownership",
+      "kind": "engine-source-case",
+      "unity": "6000.3.8f1",
+      "integrationPackage": "com.yongshi.easyreloadguard",
+      "integrationPackageVersion": "0.1.0",
+      "specification": "TestCases/Cases/11-OwnedResources.md",
+      "source": "Assets/DomainReloadCases/Runtime/OwnedResourceCase.cs",
+      "tests": "Assets/DomainReloadCases/Tests/Editor/OwnedResourceTests.cs",
+      "additionalTests": [
+        "Assets/DomainReloadCases/Tests/Editor/NativeJobOwnershipTests.cs"
+      ],
+      "additionalPackage": "com.unity.collections@2.6.2",
+      "dependencyChange": "asmdef-reference-to-already-installed-package-only",
+      "representativeCaseIds": [
+        "RES-01",
+        "RES-02"
+      ],
+      "testMethodCount": 3,
+      "status": "implemented-not-compiled-or-executed",
+      "coverage": "Representative scope and remaining manual/planned cases are detailed in the specification."
+    },
+    {
+      "id": "UNITY-07",
+      "name": "Initialization and Editor lifecycle",
+      "kind": "engine-source-case",
+      "unity": "6000.3.8f1",
+      "integrationPackage": "com.yongshi.easyreloadguard",
+      "integrationPackageVersion": "0.1.0",
+      "specification": "TestCases/Cases/12-Initialization.md",
+      "source": "Assets/DomainReloadCases/Runtime/InitializationOrderCase.cs",
+      "tests": "Assets/DomainReloadCases/Tests/Editor/InitializationOrderTests.cs",
+      "additionalTests": [
+        "Assets/DomainReloadCases/Tests/Editor/EditorLifecycleTests.cs"
+      ],
+      "representativeCaseIds": [
+        "INIT-01",
+        "INIT-02",
+        "IN-03",
+        "IN-04"
+      ],
+      "testMethodCount": 4,
+      "status": "implemented-not-compiled-or-executed",
+      "coverage": "Representative scope and remaining manual/planned cases are detailed in the specification."
+    },
+    {
+      "id": "UNITY-08",
+      "name": "Four reload mode configurations",
+      "kind": "engine-source-case",
+      "unity": "6000.3.8f1",
+      "integrationPackage": "com.yongshi.easyreloadguard",
+      "integrationPackageVersion": "0.1.0",
+      "specification": "TestCases/Cases/13-ReloadModes.md",
+      "source": "Assets/DomainReloadCases/Runtime/ReloadModeProbe.cs",
+      "tests": "Assets/DomainReloadCases/Tests/Editor/ReloadModeMatrixTests.cs",
+      "representativeCaseIds": [
+        "DR-01",
+        "OBJ-04"
+      ],
+      "testMethodCount": 4,
+      "explicitTestMethodCount": 2,
+      "status": "implemented-not-compiled-or-executed",
+      "coverage": "Representative scope and remaining manual/planned cases are detailed in the specification."
     }
-  ]
+  ],
+  "specificationUpdatedDate": "2026-10-23",
+  "specification": "TestCases/DomainReload-TestMatrix.md",
+  "specificationExecutionStatus": "not-executed-this-update",
+  "implementationUpdatedDate": "2026-10-23",
+  "newTestMethodCount": 32,
+  "newExplicitTestMethodCount": 2,
+  "implementationValidationStatus": "source-and-file-checks-only-no-compilation-or-tests"
 }

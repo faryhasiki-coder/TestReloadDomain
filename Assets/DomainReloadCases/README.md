@@ -2,9 +2,25 @@
 
 验证 Easy Reload Guard（`Packages/com.yongshi.easyreloadguard`）的正式案例。复现组和修复组分开管理：复现组故意保留问题，不要为它加入重置逻辑。
 
+2026-10-23 已补代表性源码与测试规格，入口为 [Domain Reload 完整矩阵](../../TestCases/DomainReload-TestMatrix.md)。本次未编译、未运行测试、未操作 Unity；新增代码不计入历史通过数。当前 ProjectVersion 目标为 **6000.3.8f1**；下表的旧版本与后文运行结果保留为历史记录。
+
+## 新增源码案例（2026-10-23，全部未编译、未运行）
+
+| 案例规格 | 测试源码（均位于 Tests/Editor） | 方法数 |
+| --- | --- | --- |
+| [静态状态与状态树](../../TestCases/Cases/07-StateOwnership.md) | [StateOwnershipTests.cs](Tests/Editor/StateOwnershipTests.cs) | 6 |
+| [对象字段与生命周期](../../TestCases/Cases/08-ObjectLifetime.md) | [ObjectLifetimeTests.cs](Tests/Editor/ObjectLifetimeTests.cs) | 3 |
+| [ScriptableObject](../../TestCases/Cases/09-ScriptableObject.md) | [ScriptableStateTests.cs](Tests/Editor/ScriptableStateTests.cs) | 2 |
+| [事件与后台工作](../../TestCases/Cases/10-ExternalWork.md) | [ExternalWorkTests.cs](Tests/Editor/ExternalWorkTests.cs) | 10 |
+| [原生与 Unity 资源](../../TestCases/Cases/11-OwnedResources.md) | [NativeJobOwnershipTests.cs](Tests/Editor/NativeJobOwnershipTests.cs)、[OwnedResourceTests.cs](Tests/Editor/OwnedResourceTests.cs) | 3 |
+| [初始化与 Editor 生命周期](../../TestCases/Cases/12-Initialization.md) | [InitializationOrderTests.cs](Tests/Editor/InitializationOrderTests.cs)、[EditorLifecycleTests.cs](Tests/Editor/EditorLifecycleTests.cs) | 4 |
+| [四种重载组合](../../TestCases/Cases/13-ReloadModes.md) | [ReloadModeMatrixTests.cs](Tests/Editor/ReloadModeMatrixTests.cs) | 4（2 个 Explicit） |
+
+共 32 个新增测试方法，不含此前的 PlayReentry 与 ExecuteAlways。共用 [ReloadCaseTestBase.cs](Tests/Editor/ReloadCaseTestBase.cs) 在未来执行时保存/恢复环境；临时资产使用测试独占目录，结束后由所属用例清理。已有 InitialValue 案例的干净域前提仍适用；本次未通过改变设置、编译或强制重载来满足它。仅为 NativeArray 案例在测试 asmdef 引用工程已安装的 `Unity.Collections`，未安装新包。
+
 | 项 | 值 |
 | --- | --- |
-| Unity | 6000.3.1f1 |
+| Unity（原记录） | 6000.3.1f1；不能作为本次目标版本 |
 | 入口 | `Tests/Editor/PlayReentryTests.cs`（EditMode，`DomainReloadCases.Tests`） |
 | 运行方式 | `Tools/UnityCI/Run-UnityTests.ps1 -TestFilter DomainReloadCases`，或在 Test Runner 中运行。在编辑器内运行时，需要本域尚未进入过 Play（刚编译或刚重载） |
 | 操作 | 每组在同一次测试中连续 Play→Stop 3 轮，不改代码、不重新编译。每轮新建一个案例组件，并输出一次探针日志，统计挂在 `Application.logMessageReceived` 上的处理器数量 |
@@ -19,6 +35,21 @@
 | `Control_DomainReloadEnabledStartsFresh`（Order 3） | 对照：`LeakyCaseCounter` | 开启 | 开启 | 每轮各项都是 1 |
 
 用 Order 固定顺序的原因：对照组会重载域。如果修复组排在后面，它首次进入 Play 时域已经运行过 Play，而 `InitialValue` 还没记录初值，关口会按规则强制重载，打断测试。
+
+## 补充的 ExecuteAlways 用例规格（2026-10-23，本次未执行）
+
+| ID | 设计内容 | 已有实现 / 待实现 |
+| --- | --- | --- |
+| EA-01 | 编辑态真实回调与游戏逻辑隔离 | `ExecuteAlwaysTests.EditorPreviewDoesNotExecuteGameplay`；参数变化的预览行为待扩展 |
+| EA-02 | 启用、禁用、销毁与外部订阅 | `ExecuteAlwaysTests.EnableDisableAndDestroyBalanceSubscriptions` |
+| EA-03 | 编辑态再次污染后，连续 Fast Play 的进入重置 | `ExecuteAlwaysTests.EditPollutionIsResetAcrossThreeFastPlays` |
+| EA-04 | Play 与 Prefab Stage 共存、静态 owner 和资产隔离 | `ExecuteAlwaysTests.PrefabStageCannotMutatePlayingWorld` |
+| EA-05 | 正常 Domain Reload 对照 | `ExecuteAlwaysTests.NormalDomainReloadProvidesCleanBaseline` |
+| EA-06 | InitialValue 首次观察值与源码业务初值的差别 | 待实现 |
+| EA-07 | inactive 对象、场景/Prefab 关闭重开与预览资源 | 待实现 |
+| EA-08 | ExecuteInEditMode 的行为与迁移对照 | 待实现 |
+
+前置条件、步骤、通过标准和实际路径集中在 [ExecuteAlways 案例页](../../TestCases/Cases/06-ExecuteAlways.md)。只登记源码存在；不将此前部分通过/超时记录写成本次验收。普通 PlayReentry 每轮新建组件的结果，也不能替代这些编辑世界和复用实例用例。
 
 ## 实际结果（2026-10-22，批处理流水线，CI 镜像工程）
 
