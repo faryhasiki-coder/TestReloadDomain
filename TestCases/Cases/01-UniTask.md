@@ -7,7 +7,7 @@
 - 活动测试：[UniTaskValidationTests.cs](../../Assets/UniTaskValidation/Tests/Editor/UniTaskValidationTests.cs)。
 - 测试程序集：`UniTaskValidation.Tests`；当前仅引用 `UniTask`。
 - 适配器参考：[SessionUniTaskExtensions.cs](../References/UniTaskPlaySessions/Integrations/UniTask/SessionUniTaskExtensions.cs)，已退出主工程编译。
-- 本轮结果：**4 通过、1 失败**。详细操作与结果见 [本地 README](../../Assets/UniTaskValidation/README.md)。
+- 2026-10-22 历史结果：**4 通过、1 失败**。详细操作与结果见 [本地 README](../../Assets/UniTaskValidation/README.md)。2026-10-23 本次只补 UT-06/07 设计，未运行或修改测试代码。
 
 ## 测试要点、通过标准和实测
 
@@ -23,6 +23,17 @@
 | UT-A03 | 真正的 UniTask 异常 | Host=Faulted、保留错误、禁止复用 | 历史通过，本轮未运行 |
 
 UT-03 的基线受前序 Fast Play 次数影响，不能硬编码为 16 或 32。比较的是同一轮的净增长；Mathematics 用例也会经过 UniTask 已安装的 PlayerLoop 初始化。
+
+## 根据调研补充的待实现用例
+
+| ID | 前置条件与操作 | 通过标准 | 本次结果 |
+| --- | --- | --- | --- |
+| UT-06 | 锁定包版本，模拟“调用方手动初始化 → 启动等待任务 → 包自动初始化”，记录初始化阶段、次数与任务状态 | 初始化 owner 和顺序明确；同一当前会话任务不因再次初始化而丢失/挂起；runner 不重复；若原版不满足，保留复现并单独评审适配时机 | 未执行、待实现 |
+| UT-07 | R1 中启动跨多帧/长延迟任务，退出再进；同时放置带 token 和不带 token 的对照 | 拥有的旧任务实际停止或结果被拒绝；新任务仍完成；不能用“PlayerLoop 节点数正常”替代“旧队列/任务已结束”的证据 | 未执行、待实现 |
+
+拟扩展现有 `Assets/UniTaskValidation/Tests/Editor/`，本次没有创建新 C#。包名仍为 `com.cysharp.unitask`；适配方案分别是“唯一初始化入口/明确阶段”和“取消 + 结果提交门禁”，不直接清空供应商内部队列来制造通过。
+
+研究线索：[PR #52](https://github.com/Cysharp/UniTask/pull/52) 与 [issue #681](https://github.com/Cysharp/UniTask/issues/681)。引用调研将后者列为未确认修复的报告；本次不复核其当前状态，也不据此断定 2.5.11 必现。两个新增用例的结果需要以后单独取得。
 
 ## package 适配器方案
 
