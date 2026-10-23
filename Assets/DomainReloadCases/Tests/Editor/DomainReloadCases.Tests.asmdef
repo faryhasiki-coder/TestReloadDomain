@@ -4,6 +4,7 @@
     "references": [
         "DomainReloadCases",
         "EasyReloadGuard",
+        "UniTask",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],

@@ -1,0 +1,9 @@
+# Project-scoped OKF. The global okf-memory server remains inherited.
+# This machine's existing remember workflow maintains the same bundle.
+[mcp_servers.okf-project]
+command = 'C:/Users/fangyuhao/AppData/Local/Programs/okf-agent-memory/okf.exe'
+args = ['mcp', 'C:/Users/fangyuhao/.config/agent-memory/knowledge/testreloaddomain']
+enabled_tools = ['okf_search', 'okf_show', 'okf_validate']
+
+[mcp_servers.okf-project.env]
+OKF_MCP_ROOT = 'C:/Users/fangyuhao/.config/agent-memory/knowledge/testreloaddomain'

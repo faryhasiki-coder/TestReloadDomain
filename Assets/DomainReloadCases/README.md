@@ -5,7 +5,7 @@
 | 项 | 值 |
 | --- | --- |
 | Unity | 6000.3.1f1 |
-| 入口 | `Tests/Editor/PlayReentryTests.cs`（EditMode，`DomainReloadCases.Tests`） |
+| 入口 | `Tests/Editor/PlayReentryTests.cs`、`Tests/Editor/PlayReentryTests.UniTask.cs`（同一个 partial 类，EditMode，`DomainReloadCases.Tests`） |
 | 运行方式 | `Tools/UnityCI/Run-UnityTests.ps1 -TestFilter DomainReloadCases`，或在 Test Runner 中运行。在编辑器内运行时，需要本域尚未进入过 Play（刚编译或刚重载） |
 | 操作 | 每组在同一次测试中连续 Play→Stop 3 轮，不改代码、不重新编译。每轮新建一个案例组件，并输出一次探针日志，统计挂在 `Application.logMessageReceived` 上的处理器数量 |
 | 设置 | 测试运行时临时修改 Enter Play Mode Options，结束后恢复原值（原值保存在 SessionState，域重载后依然有效） |
@@ -15,10 +15,38 @@
 | 用例 | 类型 | Domain Reload | Scene Reload | 期望 |
 | --- | --- | --- | --- | --- |
 | `Fix_GuardedStateIsResetEachSession`（Order 1） | 修复验证：`GuardedCaseCounter` | 关闭 | 开启 | 每轮计数/集合/事件订阅/外部处理器都是 1；`InitialValue` 字段恢复为 `initial`；上一会话的 Token 已取消、标记失效；退出后外部处理器残留为 0 |
-| `Repro_LeakyStateAccumulatesAcrossSessions`（Order 2） | 复现：`LeakyCaseCounter` | 关闭 | 开启 | 第 k 轮各项均为 k（逐轮累积） |
-| `Control_DomainReloadEnabledStartsFresh`（Order 3） | 对照：`LeakyCaseCounter` | 开启 | 开启 | 每轮各项都是 1 |
+| `Fix_UniTaskWorkEndsWithSession`（Order 2） | 修复验证：`GuardedUniTaskLoader` | 关闭 | 开启 | 见下方 UniTask 一节 |
+| `Repro_LeakyStateAccumulatesAcrossSessions`（Order 3） | 复现：`LeakyCaseCounter` | 关闭 | 开启 | 第 k 轮各项均为 k（逐轮累积） |
+| `Repro_UniTaskWorkLeaksAcrossSessions`（Order 4） | 复现：`LeakyUniTaskLoader` | 关闭 | 开启 | 见下方 UniTask 一节 |
+| `Control_DomainReloadEnabledStartsFresh`（Order 5） | 对照：`LeakyCaseCounter` | 开启 | 开启 | 每轮各项都是 1 |
+| `Control_UniTaskDomainReloadEnabledStartsFresh`（Order 6） | 对照：`LeakyUniTaskLoader` | 开启 | 开启 | 见下方 UniTask 一节 |
 
-用 Order 固定顺序的原因：对照组会重载域。如果修复组排在后面，它首次进入 Play 时域已经运行过 Play，而 `InitialValue` 还没记录初值，关口会按规则强制重载，打断测试。
+用 Order 固定顺序的原因：对照组会重载域。如果任何关闭 Domain Reload 的用例排在对照组之后，它进入 Play 时域已经运行过 Play，而 `InitialValue` 还没记录初值，关口会按规则强制重载，打断测试。NUnit 3.5 的 `Order` 只能加在方法上，无法跨类排序，所以 UniTask 用例与原有用例写在同一个 partial 类中。
+
+## UniTask 案例（`com.cysharp.unitask` 2.5.11，嵌入式包）
+
+依据 2.5.11 源码 `Runtime/PlayerLoopHelper.cs`：
+
+- 关闭 Domain Reload 时，`Init`（AfterAssembliesLoaded）每次进入 Play 都会重建 runner 和 continuation 队列；`EnteredEditMode`/`ExitingEditMode` 时，先执行一次旧队列，再清空。
+- 因此，只依赖 PlayerLoop 的等待不会被带进下一个会话，但被丢弃的状态机不会继续执行，其中的 `finally` 永远不会运行。
+- 线程池工作如果跨会话才完成，`RunOnThreadPool` 在 finally 中调用 `UniTask.Yield()`，经 `AddContinuation` 进入的是**当前**静态队列，也就是新会话的队列，于是旧结果被写入新会话。
+- `InsertRunner` 每次初始化都会向 `EditorApplication.playModeStateChanged` 追加一个闭包（每个 timing 一个），而且从不移除。关闭 Domain Reload 时，这些闭包逐轮累积，每个都持有已清空的旧 runner 和队列。这是 UniTask 自身的残留，内置 `UniTaskAdapter` 的 `SelfHandled` 依据没有覆盖到这一点。本工程只记录这一现象，不修复。
+
+| 写法 | 复现：`LeakyUniTaskLoader`（不传令牌） | 修复：`GuardedUniTaskLoader`（owner 为 Play 会话） |
+| --- | --- | --- |
+| 线程池加载后回写 | `await UniTask.RunOnThreadPool(work)` 后直接写结果 | 把 `PlaySession.Token` 传给工作本身和 `RunOnThreadPool`，回写前再判断 `PlaySessionStamp.IsAlive` |
+| 占用资源，在 finally 中释放 | `await UniTask.Delay(duration)` | `UniTask.Delay(..., PlaySession.Token, cancelImmediately: true)`；退出 Play 时同步结束，执行 finally |
+| 资源计数 | 未处理（RG003，已入基线） | `[ReloadSafe]`：计数由 finally 成对维护，重置反而会掩盖未释放的资源 |
+
+后台工作阻塞在测试持有的闸门（`ManualResetEventSlim`）上，用来模拟慢速 IO，完成时机由测试决定。资源占用使用 10 分钟的 Delay，测试期间不会自然结束。期望如下：
+
+- 修复（Order 2）：每轮在会话内完成一次加载，`completedLoads=1`；再启动一个阻塞的加载和一份资源占用后退出。退出后 `heldResources=0`，阻塞的工作随令牌取消结束（`blockedWorkers=0`），下一轮开始时没有旧结果写入。
+- 复现（Order 4）：第 k 轮开始时，上一轮的工作仍阻塞在线程池中；放开闸门后，上一轮的加载写入第 k 个会话。`heldResources` 逐轮为 k；UniTask 的 `playModeStateChanged` 处理器逐轮增加同样的数量。
+- 对照（Order 6）：每轮 `heldResources=1`，UniTask 处理器数量每轮相同（finally 同样没有执行，只是残留随旧域一起被丢弃）。后台工作阻塞的线程会跨域重载，可能拖住卸载，所以对照组不启动后台工作。
+- 处理器统计使用 6000.3.1f1 的内部结构 `EditorApplication.m_PlayModeStateChangedEvent.m_Delegate`（`length` / `GetDelegateAt`）。读取失败时测试会直接失败并提示复核，不会静默跳过。
+- 每个用例结束时（TearDown）放开闸门，并等待后台工作退出，避免阻塞的线程留到后续用例或域重载中。
+
+**验证状态：未验证。** 截至 2026-10-22 只做了静态检查，尚未编译，也尚未运行 Test Runner 或人工连续 Play→Stop。
 
 ## 实际结果（2026-10-22，批处理流水线，CI 镜像工程）
 

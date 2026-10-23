@@ -1,7 +1,11 @@
 # Easy Reload Guard 基线：已知的遗留静态状态问题，不阻断 Play，但仍出现在检查报告中。
 # 修复后删除对应行。由 Tools/Easy Reload Guard/将当前遗留问题写入基线 生成，不要手工添加新问题。
-# 以下 4 条来自复现案例 Assets/DomainReloadCases/Runtime/LeakyCaseCounter.cs，故意保留以暴露问题，不要修复。
+# 以下 8 条来自复现案例 Assets/DomainReloadCases/Runtime/LeakyCaseCounter.cs（4 条）与 LeakyUniTaskLoader.cs（4 条），故意保留以暴露问题，不要修复。
 RG001|DomainReloadCases|DomainReloadCases.LeakyCaseCounter.Ticked
 RG003|DomainReloadCases|DomainReloadCases.LeakyCaseCounter.CreatedCount
 RG003|DomainReloadCases|DomainReloadCases.LeakyCaseCounter.LogCallbackCount
+RG003|DomainReloadCases|DomainReloadCases.LeakyUniTaskLoader.CompletedLoads
+RG003|DomainReloadCases|DomainReloadCases.LeakyUniTaskLoader.HeldResources
+RG003|DomainReloadCases|DomainReloadCases.LeakyUniTaskLoader.LastCompletedLoad
+RG003|DomainReloadCases|DomainReloadCases.LeakyUniTaskLoader.StartedLoads
 RG004|DomainReloadCases|DomainReloadCases.LeakyCaseCounter.Instances

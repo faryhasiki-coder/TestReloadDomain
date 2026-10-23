@@ -13,9 +13,11 @@ namespace DomainReloadCases.Tests
     /// <summary>
     /// 连续 Play→Stop 3 轮，不改代码、不重新编译；Scene Reload 始终开启。
     /// 修复、复现两组关闭 Domain Reload，对照组开启 Domain Reload。
-    /// 修复组需在本域尚未进入过 Play 时最先运行（批处理流水线满足），因此用 Order 固定顺序。
+    /// 修复组需在本域尚未进入过 Play 时最先运行（批处理流水线满足），且所有关闭 Domain Reload 的用例都要排在
+    /// 开启 Domain Reload 的对照之前，因此用 Order 固定顺序。UniTask 用例在 PlayReentryTests.UniTask.cs，
+    /// 与本文件同属一个类：NUnit 3.5 的 Order 只能用于方法，无法跨类排序。
     /// </summary>
-    public class PlayReentryTests
+    public partial class PlayReentryTests
     {
         const int k_Cycles = 3;
         const string k_SavedOptionsKey = "DomainReloadCases.SavedPlayModeOptions";
@@ -24,7 +26,7 @@ namespace DomainReloadCases.Tests
         const string k_EditorSettingsPath = "ProjectSettings/EditorSettings.asset";
 
         // 开启 Domain Reload 时，Test Framework 在域重载后会重新执行 SetUp，且只恢复枚举器位置、不恢复局部变量：
-        // 原设置与轮次都存入 SessionState，设置项按测试名决定
+        // 原设置与轮次都存入 SessionState，设置项按测试名决定（Control_ 前缀的用例开启 Domain Reload）
         [SetUp]
         public void SetUp()
         {
@@ -34,7 +36,7 @@ namespace DomainReloadCases.Tests
                 SessionState.SetBool(k_SavedDirtyKey, EditorUtility.IsDirty(EditorSettingsAsset()));
             }
 
-            var control = TestContext.CurrentContext.Test.MethodName == nameof(Control_DomainReloadEnabledStartsFresh);
+            var control = TestContext.CurrentContext.Test.MethodName.StartsWith("Control_", StringComparison.Ordinal);
             ApplyOptions(control ? EnterPlayModeOptions.None : EnterPlayModeOptions.DisableDomainReload);
         }
 
@@ -42,6 +44,7 @@ namespace DomainReloadCases.Tests
         public void TearDown()
         {
             SessionState.EraseInt(k_ControlCycleKey);
+            TearDownUniTask();
             var saved = SessionState.GetInt(k_SavedOptionsKey, -1);
             if (saved < 0) return;
             ApplyOptions((EnterPlayModeOptions)saved);
@@ -68,7 +71,7 @@ namespace DomainReloadCases.Tests
         static UnityEngine.Object EditorSettingsAsset() => AssetDatabase.LoadAllAssetsAtPath(k_EditorSettingsPath)[0];
 
         /// <summary>对照：开启 Domain Reload 时，同一个未处理的案例每轮都从干净状态开始。</summary>
-        [UnityTest, Order(3)]
+        [UnityTest, Order(5)]
         public IEnumerator Control_DomainReloadEnabledStartsFresh()
         {
             while (SessionState.GetInt(k_ControlCycleKey, 0) < k_Cycles)
@@ -93,7 +96,7 @@ namespace DomainReloadCases.Tests
         }
 
         /// <summary>复现：未处理的静态状态逐轮累积。</summary>
-        [UnityTest, Order(2)]
+        [UnityTest, Order(3)]
         public IEnumerator Repro_LeakyStateAccumulatesAcrossSessions()
         {
             var startCreated = LeakyCaseCounter.CreatedCount;

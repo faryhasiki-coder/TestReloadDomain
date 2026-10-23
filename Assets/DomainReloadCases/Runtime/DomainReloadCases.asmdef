@@ -2,7 +2,8 @@
     "name": "DomainReloadCases",
     "rootNamespace": "DomainReloadCases",
     "references": [
-        "EasyReloadGuard"
+        "EasyReloadGuard",
+        "UniTask"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
