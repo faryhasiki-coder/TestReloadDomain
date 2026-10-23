@@ -4,9 +4,9 @@
     "references": [
         "DomainReloadCases",
         "EasyReloadGuard",
-        "Unity.Collections",
         "UnityEngine.TestRunner",
-        "UnityEditor.TestRunner"
+        "UnityEditor.TestRunner",
+        "UniTask"
     ],
     "includePlatforms": [
         "Editor"

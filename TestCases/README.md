@@ -1,10 +1,10 @@
 # 实战案例测试集
 
-基础案例整理：2026-10-22。按调研补全用例：2026-10-23。目标环境：Unity 6000.3.8f1 / Windows Editor。
+基础案例整理：2026-10-22。接入样例重写：2026-10-23。目标环境：Unity 6000.3.x（不限定小版本）/ Windows Editor；各结果记录实际运行版本。
 
 这是一份“可运行用例 + 待接入案例”的统一目录。每项分别记录测试要点、通过标准和实际结果；“找到源码”“下载完成”“适配完成”“测试通过”“用户认可适配方案”是不同状态。
 
-**2026-10-23 已补 7 组代表性源码案例、32 个测试方法及对应规格，未编译、未运行测试、未操作 Unity、未安装依赖。** 其中 R2/R3 两项为 Explicit；每组都区分通过标准和实际结果。完整分类及尚未实现的扩展场景见 [Domain Reload 测试用例矩阵](DomainReload-TestMatrix.md)。下面的历史数字不代表这次重新验证。
+**2026-10-23 修正：** 原 UNITY-01～08（提交 b2c1327）把样例直接写成了接入 Easy Reload Guard 之后的形态，并且有实测失败，已删除。改为 [INT 接入样例](Cases/06-IntegrationSamples.md)：接入前的实战代码 + 9 个接入验收测试（Explicit，接入前预期失败），未编译、未运行。下面的历史数字不代表重新验证。
 
 ## 案例目录
 
@@ -15,14 +15,8 @@
 | PKG-03 | [Unity.Mathematics](Cases/03-Mathematics.md)：向量运算、随机数状态 | package：`com.unity.mathematics@1.3.3`（本地已有） | [独立测试](../Assets/MathematicsValidation/Tests/Editor/MathematicsValidationTests.cs)；仅业务随机状态需要 reset | 2026-10-22：2/2 通过；本次未复测 |
 | SRC-01 | [2048](Cases/04-2048.md)：棋盘、合并、协程、GoKit 动画 | 完整源码工程；MIT；原 Unity 5.6.5f1 | [本地案例](../outputs/test-cases/projects/2048/)；重点 `Assets/Scripts/GameManager.cs` 与 `Assets/Plugins/GoKit/Go.cs` | 固定提交已下载；未升级、未接入、未运行 |
 | SRC-02 | [3D Snake](Cases/05-Snake.md)：单例、场景重进、动态对象 | 完整源码工程；MIT；原 Unity 6000.2.2f1 | [本地案例](../outputs/test-cases/projects/Snake/)；重点 `Assets/Scripts/GameManager.cs`、`SnakeMovement.cs` | 固定提交已下载；未接入、未运行 |
-| UNITY-01 | [ExecuteAlways / ExecuteInEditMode](Cases/06-ExecuteAlways.md)：编辑世界与运行世界隔离 | 引擎源码案例；修复对照引用 `com.yongshi.easyreloadguard@0.1.0` | [组件](../Assets/DomainReloadCases/Runtime/ExecuteAlwaysCaseCounter.cs)、[场景与 Prefab](../Assets/DomainReloadCases/ExecuteAlways/) | EA-01～05 已有实现；EA-06～08 待实现；本次均未执行 |
-| UNITY-02 | [静态状态与所有权](Cases/07-StateOwnership.md) | 源码案例；`com.yongshi.easyreloadguard@0.1.0` | [StateOwnershipCase](../Assets/DomainReloadCases/Runtime/StateOwnershipCase.cs)；字段 reset / 状态根重建 / 泛型显式登记 | 6 个方法；未编译、未运行 |
-| UNITY-03 | [对象字段与生命周期](Cases/08-ObjectLifetime.md) | 引擎源码案例；R1 使用现有 Easy Reload Guard | [ObjectLifetimeProbe](../Assets/DomainReloadCases/Runtime/ObjectLifetimeProbe.cs)；场景/Prefab 重建 | 3 个方法；未编译、未运行 |
-| UNITY-04 | [ScriptableObject](Cases/09-ScriptableObject.md) | 源码案例；`com.yongshi.easyreloadguard@0.1.0` | [ScriptableStateCase](../Assets/DomainReloadCases/Runtime/ScriptableStateCase.cs)；资产运行状态与副本 owner | 2 个方法；未编译、未运行 |
-| UNITY-05 | [事件、Task、Thread、Timer](Cases/10-ExternalWork.md) | 源码案例；`com.yongshi.easyreloadguard@0.1.0` | [ExternalWorkCase](../Assets/DomainReloadCases/Runtime/ExternalWorkCase.cs)；退出释放、token 与结果门禁 | 10 个方法；未编译、未运行 |
-| UNITY-06 | [原生与 Unity 资源](Cases/11-OwnedResources.md) | 源码案例；现有 `com.unity.collections@2.6.2` + Easy Reload Guard | [OwnedResourceCase](../Assets/DomainReloadCases/Runtime/OwnedResourceCase.cs)、[NativeJobOwnershipTests](../Assets/DomainReloadCases/Tests/Editor/NativeJobOwnershipTests.cs)；完成 Job 后释放自有资源 | 3 个方法；未编译、未运行 |
-| UNITY-07 | [初始化与 Editor 入口](Cases/12-Initialization.md) | 源码案例；`com.yongshi.easyreloadguard@0.1.0` | [InitializationOrderCase](../Assets/DomainReloadCases/Runtime/InitializationOrderCase.cs)、Editor 测试探针；显式 B→A 顺序 | 4 个方法 + 人工重编译观察入口；未编译、未运行 |
-| UNITY-08 | [四种重载组合](Cases/13-ReloadModes.md) | 引擎源码案例；static reset 对照用 Easy Reload Guard | [ReloadModeMatrixTests](../Assets/DomainReloadCases/Tests/Editor/ReloadModeMatrixTests.cs)；按组合记录身份、字段与回调 | 4 个方法，其中 R2/R3 Explicit；未编译、未运行 |
+| INT-01 | [Easy Reload Guard 接入样例](Cases/06-IntegrationSamples.md)：计分/事件总线、泛型单例、对象池、服务注册、ScriptableObject、async/Timer/晚到结果、ExecuteAlways | 源码样例；接入目标 `com.yongshi.easyreloadguard`，样例本身不引用 | [样例源码](../Assets/ReloadIntegrationSamples/Runtime/)、[验收测试](../Assets/ReloadIntegrationSamples/Tests/Editor/)、[ExecuteAlways 场景](../Assets/ReloadIntegrationSamples/ExecuteAlways/) | 9 个验收方法；未编译、未运行 |
+| GAME-01～03 | [真实开源小游戏](Cases/06-IntegrationSamples.md)：Breakout、Asteroider、Voidrunner | 完整游戏源码；MIT；上游 Unity 6000.3.5f2 / 6000.3.8f1 / 6000.3.24f1 | [Games](../Assets/ReloadIntegrationSamples/Games/)，原版未修改 | 已导入；未编译、未运行 |
 
 游戏完整源码放在 `outputs/test-cases/projects/`，没有导入主工程 `Assets/`。因此没有同名 GameManager 冲突，也没有在主工程安装旧游戏依赖。该目录按现有规则被 Git 忽略；版本、来源和文件哈希见 [来源清单](sources.json) 与 [下载清单](../outputs/test-cases/source-manifest.json)，可按固定提交重新取得。
 
@@ -43,15 +37,15 @@
 | S09 Unity 对象与单例 | 单例引用有效，重复重进后对象数回基线；保留场景内真实行为 | SNAKE-02～SNAKE-04、G2048-03 |
 | S10 协程与动画队列 | 中途停止/重开不让旧动画继续写对象，退出后队列无残留 | G2048-02、G2048-03 |
 | S11 玩法与升级隔离 | 合并、计分、移动、碰撞仍正确；版本迁移问题单独登记 | G2048-01、G2048-04、SNAKE-01 |
-| S12 四种重载组合与重编译 | R0～R3 独立记录，正常重载/编译不能掩盖 R1/R3 残留 | DR-01～04 |
-| S13 实例字段与对象身份 | 每局 new、场景重建、inactive/disabled、复用实例分别判断 | OBJ-01～04 |
-| S14 ScriptableObject | 资产、运行副本、事件通道和磁盘保存边界 | SO-01/02 |
-| S15 编辑态与 Prefab 世界 | ExecuteAlways、ExecuteInEditMode、预览、InitialValue 捕获、跨世界静态 owner | EA-01～08 |
-| S16 编辑器与初始化顺序 | 静态构造、运行阶段依赖、Editor 初始化、真实程序集重载 | INIT-01/02、IN-03/04 |
-| S17 后台与原生资源 | 取消请求与实际停止分开；线程、计时器、Job、GPU 资源按所有权收尾 | ASYNC-01～03、RES-01/02 |
-| S18 自动化与版本边界 | 工具 opt-in 范围、包/DLL 适配、锁重载、Player/IL2CPP 分别验收 | PKG-INIT/TWEEN、TOOL-01～04、BUILD-01/02 |
+| S12 四种重载组合与重编译 | R0～R3 独立记录，正常重载/编译不能掩盖 R1/R3 残留 | 未纳入当前样例（见 INT 的不覆盖范围） |
+| S13 单例与泛型静态 | 泛型基类单例、直接使用的闭合泛型每局重新开始 | INT-01、INT-02a |
+| S14 ScriptableObject | 已加载资产上的运行时字段每局恢复，作者配置不变 | INT-03b |
+| S15 编辑态与 Prefab 世界 | ExecuteAlways 编辑态写入不带进 Play；InitialValue 首次捕获的限制 | INT-05 |
+| S16 初始化与注册表 | 场景入口每局重新登记服务；初始化标志不跳过必要初始化 | INT-01、INT-03a |
+| S17 后台工作与晚到结果 | async 循环、线程池计时器退出即停；旧会话结果不写入新会话 | INT-04a～c |
+| S18 自动化与版本边界 | 工具 opt-in 范围、包/DLL 适配、锁重载、Player/IL2CPP 分别验收 | 未纳入当前样例；原设计（PKG-INIT/TWEEN、TOOL、BUILD）见提交 b2c1327 的 `TestCases/DomainReload-TestMatrix.md` |
 
-Player/IL2CPP、性能和未安装工具仍是专项设计；关闭 Scene Reload、线程与原生资源已有代表源码，但均无本次执行结果。具体未覆盖项见矩阵。本清单不承诺所有第三方 API 或多线程路径全覆盖。新案例不因“存在 static”直接判失败；纯函数库不为展示适配而修改供应商代码。
+Player/IL2CPP、性能、Scene Reload 关闭、原生与 GPU 资源、未安装的第三方工具不在当前样例范围内。本清单不承诺覆盖全部第三方 API 或多线程路径。新案例不因"存在 static"直接判失败；纯函数库不为展示适配而修改供应商代码。
 
 ## 统一执行方法
 
@@ -61,7 +55,7 @@ Player/IL2CPP、性能和未安装工具仍是专项设计；关闭 Scene Reload
 4. 保存 Unity Test Runner 原始结果和观测数据。失败保留失败；行为刻画通过不等于兼容性通过。
 5. 恢复测试前的 Enter Play Mode 设置、后台运行选项和场景。新增适配器应给出源码差异、涉及文件数、是否修改供应商和可拔除方式，再交用户评估。
 
-已有代码入口：`UniTaskValidation.Tests`、`MathematicsValidation.Tests`、`DomainReloadCases.Tests`。ExecuteAlways 使用 `Case.ExecuteAlways` 分类，其余已有 `Case.UniTask`、`Case.Mathematics` 和 `Scenario.*`；`Regression.KnownFailure` 仅作筛选标签。此处只登记入口，本次不运行这些测试。
+已有代码入口：`UniTaskValidation.Tests`、`MathematicsValidation.Tests`、`DomainReloadCases.Tests`（包的修复回归）、`ReloadIntegrationSamples.Tests`（接入验收，分类 `ReloadIntegration`，Explicit）。其余已有分类为 `Case.UniTask`、`Case.Mathematics` 和 `Scenario.*`；`Regression.KnownFailure` 仅作筛选标签。此处只登记入口，本次不运行这些测试。
 
 ## 历史结果与分支清理（2026-10-22）
 

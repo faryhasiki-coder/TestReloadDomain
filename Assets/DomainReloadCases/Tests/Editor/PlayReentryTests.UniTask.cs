@@ -21,7 +21,7 @@ namespace DomainReloadCases.Tests
         const string k_ControlUniTaskHandlersKey = "DomainReloadCases.ControlUniTaskHandlers";
         const double k_WaitSeconds = 5;
         const string k_HandlerReflectionHint =
-            "无法读取 EditorApplication.m_PlayModeStateChangedEvent（6000.3.1f1 中为 EventWithPerformanceTracker），升级 Unity 后需复核反射路径";
+            "无法读取 EditorApplication.m_PlayModeStateChangedEvent（6000.3 中为 EventWithPerformanceTracker）；内部结构变化时需复核反射路径";
 
         static readonly TimeSpan k_HoldDuration = TimeSpan.FromMinutes(10);
         static readonly ManualResetEventSlim s_WorkGate = new ManualResetEventSlim(false);
@@ -187,7 +187,7 @@ namespace DomainReloadCases.Tests
 
         /// <summary>
         /// 统计 EditorApplication.playModeStateChanged 上由 PlayerLoopHelper 注册的处理器；读取失败返回 -1。
-        /// 依赖 6000.3.1f1 的内部结构：m_PlayModeStateChangedEvent.m_Delegate 的 length / GetDelegateAt。
+        /// 依赖 Unity 6000.3 的内部结构：m_PlayModeStateChangedEvent.m_Delegate 的 length / GetDelegateAt；不限定小版本。
         /// </summary>
         static int CountUniTaskPlayModeHandlers()
         {

@@ -17,7 +17,7 @@
 
 | 信息 | 当前值与来源 |
 | --- | --- |
-| Unity | `6000.3.1f1`，见 `ProjectSettings/ProjectVersion.txt` |
+| Unity | 6000.3.x，不限定小版本（本机 `6000.3.1f1`，另一环境 `6000.3.8f1`），实际版本见 `ProjectSettings/ProjectVersion.txt`；测试代码不得断言具体小版本，结果记录实际运行版本 |
 | Play Mode 设置 | `ProjectSettings/EditorSettings.asset` 中 `m_EnterPlayModeOptionsEnabled: 1`、`m_EnterPlayModeOptions: 0`；Domain Reload 与 Scene Reload 均开启 |
 | 已配置场景 | `Assets/Scenes/SampleScene.unity`，见 `ProjectSettings/EditorBuildSettings.asset` |
 | Unity MCP | `com.coplaydev.unity-mcp` `10.0.0` |
@@ -32,6 +32,7 @@
 | 正式案例 | `Assets/DomainReloadCases`（复现组 `LeakyCaseCounter`、`LeakyUniTaskLoader`，修复组 `GuardedCaseCounter`、`GuardedUniTaskLoader`；partial 类 `PlayReentryTests` 包含连续 3 轮重入与 Domain Reload 开启对照，所有关闭 Domain Reload 的用例用 Order 排在对照之前） |
 | 测试流水线 | `Tools/UnityCI/Run-UnityTests.ps1`：编辑器占用工程时镜像到 `%TEMP%\EasyReloadGuardCI` 后用 batchmode 运行测试和检查 |
 | 检查基线 | `ProjectSettings/EasyReloadGuardBaseline.txt`，只含复现案例故意保留的问题 |
+| 接入样例 | `Assets/ReloadIntegrationSamples`（程序集 `ReloadIntegrationSamples`，不引用包）：接入**前**的实战代码，供包做接入测试，`Games/` 下为原样导入的开源小游戏；验收测试 `ReloadIntegrationSamples.Tests` 为 Explicit，接入前预期失败。主线不得把样例改成接入后形态。规格见 `TestCases/Cases/06-IntegrationSamples.md` |
 | 编辑器实时控制 | `com.unity.pipeline` `0.8.0-exp.1`（内部源 `upm.in.ys4fun.com`）。读取 `Library/Pipeline/.unity-pipeline-port` 获取端口和令牌，向 `127.0.0.1` 发 HTTP 请求；令牌不要打印或保存。编辑器在后台时先开启 `set_autotick`，结束后检查交互模式是否已恢复 |
 
 Unity 6000.3 注意：`EditorSettings.enterPlayModeOptionsEnabled` 由 options 推导。修改时先写 options，再写 `enabled = options != None`；只改动内存、不想改写磁盘时，对 `EditorSettings.asset` 清除脏标记。磁盘上旧版的 `1/0` 组合无法通过 API 原样写回。
@@ -54,6 +55,23 @@ Unity 6000.3 注意：`EditorSettings.enterPlayModeOptionsEnabled` 由 options �
 - 使用 Unity MCP 时先读 `mcpforunity://instances`，匹配当前工程并核对 `mcpforunity://project/info`；多实例时明确选中目标。不要固化实例 hash，也不要把工具可列出或包已安装当作连接成功。
 - MCP 读取失败时如实报告；不要为了证明连接而自动刷新、重新导入或重启 Unity。
 - 正式案例与一次性验证脚本分开管理。临时脚本及其专用产物在最终交付前清理；正式 Unity 资源及其 `.meta` 一同维护。
+
+## 交付分档
+
+| 档位 | 适用范围 | 交付前的最低验证 |
+| --- | --- | --- |
+| 一般交付 | 规则、文档、样例或测试源码、包代码等，未声明为接入工程案例的改动 | 按上文"修改与验证边界"执行；未运行的项目标为未验证 |
+| 接入工程案例 | 把 Easy Reload Guard 接入工程案例（`Assets/ReloadIntegrationSamples` 的手写样例与 `Games/` 下的游戏，或后续新增的案例工程），并以"接入完成"作为交付结论 | **必须通过 Unity Pipeline（`com.unity.pipeline`）完成 PSP 测试** |
+
+PSP 测试（Play → Stop → Play）的要求：
+
+- 条件：Domain Reload 关闭、Scene Reload 开启；同一脚本域内连续 Play → Stop 至少 3 轮，期间不改代码、不重新编译。
+- 驱动：只用 Unity Pipeline。按"当前工程入口"中的方式读取端口和令牌，令牌不打印、不保存；用 `editor_play` / `editor_stop` 进出 Play。编辑器在后台时先开启 `set_autotick`，结束后确认交互模式已恢复。
+- 范围：每个接入的案例分别测。手写样例使用 `ExecuteAlwaysCase.unity` 并另跑 `ReloadIntegration` 验收测试；每个游戏使用它自己的场景。Test Runner 通过不能替代 PSP。
+- 记录：Unity 实际版本、两项 Reload 配置、实际轮数、每轮的关键观测和 Console 中的错误或 `[Easy Reload Guard]` 日志。中途发生重编译、域重载或 Editor 重启时，该次结果作废，重新建立连续基线。
+- 收尾：恢复原 Enter Play Mode 设置，`EditorSettings.asset` 不留脏标记。
+- 用户指定此档位，即授权完成 PSP 所需的等待编译、Play/Stop 和读取 Console；不包括修改其他工程设置或包版本。
+- Pipeline 不可用，或 PSP 未完成时，不得按此档交付，应降级为一般交付，并说明缺少的证据。
 
 ## 项目记忆与 Agent 接入
 

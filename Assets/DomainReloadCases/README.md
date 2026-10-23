@@ -2,25 +2,11 @@
 
 验证 Easy Reload Guard（`Packages/com.yongshi.easyreloadguard`）的正式案例。复现组和修复组分开管理：复现组故意保留问题，不要为它加入重置逻辑。
 
-2026-10-23 已补代表性源码与测试规格，入口为 [Domain Reload 完整矩阵](../../TestCases/DomainReload-TestMatrix.md)。本次未编译、未运行测试、未操作 Unity；新增代码不计入历史通过数。当前 ProjectVersion 目标为 **6000.3.8f1**；下表的旧版本与后文运行结果保留为历史记录。
-
-## 新增源码案例（2026-10-23，全部未编译、未运行）
-
-| 案例规格 | 测试源码（均位于 Tests/Editor） | 方法数 |
-| --- | --- | --- |
-| [静态状态与状态树](../../TestCases/Cases/07-StateOwnership.md) | [StateOwnershipTests.cs](Tests/Editor/StateOwnershipTests.cs) | 6 |
-| [对象字段与生命周期](../../TestCases/Cases/08-ObjectLifetime.md) | [ObjectLifetimeTests.cs](Tests/Editor/ObjectLifetimeTests.cs) | 3 |
-| [ScriptableObject](../../TestCases/Cases/09-ScriptableObject.md) | [ScriptableStateTests.cs](Tests/Editor/ScriptableStateTests.cs) | 2 |
-| [事件与后台工作](../../TestCases/Cases/10-ExternalWork.md) | [ExternalWorkTests.cs](Tests/Editor/ExternalWorkTests.cs) | 10 |
-| [原生与 Unity 资源](../../TestCases/Cases/11-OwnedResources.md) | [NativeJobOwnershipTests.cs](Tests/Editor/NativeJobOwnershipTests.cs)、[OwnedResourceTests.cs](Tests/Editor/OwnedResourceTests.cs) | 3 |
-| [初始化与 Editor 生命周期](../../TestCases/Cases/12-Initialization.md) | [InitializationOrderTests.cs](Tests/Editor/InitializationOrderTests.cs)、[EditorLifecycleTests.cs](Tests/Editor/EditorLifecycleTests.cs) | 4 |
-| [四种重载组合](../../TestCases/Cases/13-ReloadModes.md) | [ReloadModeMatrixTests.cs](Tests/Editor/ReloadModeMatrixTests.cs) | 4（2 个 Explicit） |
-
-共 32 个新增测试方法，不含此前的 PlayReentry 与 ExecuteAlways。共用 [ReloadCaseTestBase.cs](Tests/Editor/ReloadCaseTestBase.cs) 在未来执行时保存/恢复环境；临时资产使用测试独占目录，结束后由所属用例清理。已有 InitialValue 案例的干净域前提仍适用；本次未通过改变设置、编译或强制重载来满足它。仅为 NativeArray 案例在测试 asmdef 引用工程已安装的 `Unity.Collections`，未安装新包。
+用于给 Easy Reload Guard 做**接入测试**的接入前样例不在本目录，见 [Assets/ReloadIntegrationSamples](../ReloadIntegrationSamples/README.md)。2026-10-23 曾在本目录加入的 7 组"已接入"案例存在错误，已删除，原因见[接入样例案例页](../../TestCases/Cases/06-IntegrationSamples.md)的修正记录。
 
 | 项 | 值 |
 | --- | --- |
-| Unity（原记录） | 6000.3.1f1；不能作为本次目标版本 |
+| Unity | 6000.3.x，不限定小版本；下文历史结果在 6000.3.1f1 上取得 |
 | 入口 | `Tests/Editor/PlayReentryTests.cs`（EditMode，`DomainReloadCases.Tests`） |
 | 运行方式 | `Tools/UnityCI/Run-UnityTests.ps1 -TestFilter DomainReloadCases`，或在 Test Runner 中运行。在编辑器内运行时，需要本域尚未进入过 Play（刚编译或刚重载） |
 | 操作 | 每组在同一次测试中连续 Play→Stop 3 轮，不改代码、不重新编译。每轮新建一个案例组件，并输出一次探针日志，统计挂在 `Application.logMessageReceived` 上的处理器数量 |
@@ -59,25 +45,10 @@
 - 修复（Order 2）：每轮在会话内完成一次加载，`completedLoads=1`；再启动一个阻塞的加载和一份资源占用后退出。退出后 `heldResources=0`，阻塞的工作随令牌取消结束（`blockedWorkers=0`），下一轮开始时没有旧结果写入。
 - 复现（Order 4）：第 k 轮开始时，上一轮的工作仍阻塞在线程池中；放开闸门后，上一轮的加载写入第 k 个会话。`heldResources` 逐轮为 k；UniTask 的 `playModeStateChanged` 处理器逐轮增加同样的数量。
 - 对照（Order 6）：每轮 `heldResources=1`，UniTask 处理器数量每轮相同（finally 同样没有执行，只是残留随旧域一起被丢弃）。后台工作阻塞的线程会跨域重载，可能拖住卸载，所以对照组不启动后台工作。
-- 处理器统计使用 6000.3.1f1 的内部结构 `EditorApplication.m_PlayModeStateChangedEvent.m_Delegate`（`length` / `GetDelegateAt`）。读取失败时测试会直接失败并提示复核，不会静默跳过。
+- 处理器统计使用 Unity 6000.3 的内部结构（不限定小版本） `EditorApplication.m_PlayModeStateChangedEvent.m_Delegate`（`length` / `GetDelegateAt`）。读取失败时测试会直接失败并提示复核，不会静默跳过。
 - 每个用例结束时（TearDown）放开闸门，并等待后台工作退出，避免阻塞的线程留到后续用例或域重载中。
 
 **验证状态：未验证。** 截至 2026-10-22 只做了静态检查，尚未编译，也尚未运行 Test Runner 或人工连续 Play→Stop。
-
-## 补充的 ExecuteAlways 用例规格（2026-10-23，本次未执行）
-
-| ID | 设计内容 | 已有实现 / 待实现 |
-| --- | --- | --- |
-| EA-01 | 编辑态真实回调与游戏逻辑隔离 | `ExecuteAlwaysTests.EditorPreviewDoesNotExecuteGameplay`；参数变化的预览行为待扩展 |
-| EA-02 | 启用、禁用、销毁与外部订阅 | `ExecuteAlwaysTests.EnableDisableAndDestroyBalanceSubscriptions` |
-| EA-03 | 编辑态再次污染后，连续 Fast Play 的进入重置 | `ExecuteAlwaysTests.EditPollutionIsResetAcrossThreeFastPlays` |
-| EA-04 | Play 与 Prefab Stage 共存、静态 owner 和资产隔离 | `ExecuteAlwaysTests.PrefabStageCannotMutatePlayingWorld` |
-| EA-05 | 正常 Domain Reload 对照 | `ExecuteAlwaysTests.NormalDomainReloadProvidesCleanBaseline` |
-| EA-06 | InitialValue 首次观察值与源码业务初值的差别 | 待实现 |
-| EA-07 | inactive 对象、场景/Prefab 关闭重开与预览资源 | 待实现 |
-| EA-08 | ExecuteInEditMode 的行为与迁移对照 | 待实现 |
-
-前置条件、步骤、通过标准和实际路径集中在 [ExecuteAlways 案例页](../../TestCases/Cases/06-ExecuteAlways.md)。只登记源码存在；不将此前部分通过/超时记录写成本次验收。普通 PlayReentry 每轮新建组件的结果，也不能替代这些编辑世界和复用实例用例。
 
 ## 实际结果（2026-10-22，批处理流水线，CI 镜像工程）
 
