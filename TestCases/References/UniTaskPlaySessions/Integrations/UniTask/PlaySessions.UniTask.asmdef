@@ -1,0 +1,4 @@
+{
+  "name": "PlaySessions.UniTask",
+  "references": ["Faryhasiki.PlaySessions.Core", "UniTask"]
+}
