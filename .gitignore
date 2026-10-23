@@ -1,4 +1,4 @@
-# Unity generated data
+# Unity generated state
 /[Ll]ibrary/
 /[Tt]emp/
 /[Oo]bj/
@@ -6,24 +6,22 @@
 /[Uu]ser[Ss]ettings/
 /[Bb]uild/
 /[Bb]uilds/
-/MemoryCaptures/
-/Recordings/
+/[Mm]emoryCaptures/
+/[Rr]ecordings/
 
-# IDE generated files
+# Generated IDE projects and local caches
 /.vs/
+/.idea/
 /*.csproj
 /*.sln
 /*.slnx
-/*.pidb
 /*.suo
 /*.user
 /*.userprefs
+/*.pidb
+/*.booproj
+/*.opendb
+/*.VC.db
 
-# Agent temporary and delivery artifacts
-/work/
-/outputs/
-
-# Local secrets
-.env
-.env.*
-!.env.example
+# Keep Assets (including .meta), Packages, ProjectSettings,
+# AGENTS.md and .codex/config.toml available for version control.

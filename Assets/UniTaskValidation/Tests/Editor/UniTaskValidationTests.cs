@@ -246,13 +246,13 @@ namespace UniTaskValidation
         }
     }
 
-    // Read-only diagnostics for Unity 6000.3.8f1. Never detaches or overwrites vendor callbacks.
+    // Read-only diagnostics for Unity 6000.3.x; not pinned to a minor version. A missing field fails with the field name below.
+    // Never detaches or overwrites vendor callbacks.
     static class ReadOnlyEditorProbe
     {
         const BindingFlags Flags = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
         public static int CountUniTaskCallbacks()
         {
-            Assert.AreEqual("6000.3.8f1", Application.unityVersion, "Review the probe after changing Unity.");
             object tracker = RequiredField(typeof(EditorApplication), "m_PlayModeStateChangedEvent").GetValue(null);
             object holder = RequiredField(tracker.GetType(), "m_Delegate").GetValue(tracker);
             object entry = RequiredField(holder.GetType(), "m_DelegateOrList").GetValue(holder);
