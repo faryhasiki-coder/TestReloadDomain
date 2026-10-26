@@ -48,5 +48,28 @@ namespace EasyReloadGuard.Editor.Tests
             Assert.AreEqual(1, calls);
             Assert.IsEmpty(PlaySession.DrainRegisteredResets());
         }
+
+        [Test]
+        public void RegisterPersistentReset_SurvivesMultipleDrains()
+        {
+            PlaySession.DrainRegisteredResets();
+            var calls = 0;
+            PlaySession.RegisterPersistentReset(() => calls++);
+
+            foreach (var reset in PlaySession.DrainRegisteredResets()) reset();
+            Assert.AreEqual(1, calls);
+
+            foreach (var reset in PlaySession.DrainRegisteredResets()) reset();
+            Assert.AreEqual(2, calls);
+
+            foreach (var reset in PlaySession.DrainRegisteredResets()) reset();
+            Assert.AreEqual(3, calls);
+        }
+
+        [Test]
+        public void RegisterPersistentReset_ThrowsOnNull()
+        {
+            Assert.Throws<ArgumentNullException>(() => PlaySession.RegisterPersistentReset(null));
+        }
     }
 }

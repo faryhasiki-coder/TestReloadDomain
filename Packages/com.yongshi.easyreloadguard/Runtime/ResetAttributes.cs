@@ -16,11 +16,12 @@ namespace EasyReloadGuard
     }
 
     /// <summary>
-    /// 进入 Play 时重置该静态字段。事件与自动属性使用 field: 目标：
+    /// 进入 Play 时重置该静态字段或自动属性。事件仍需 field: 目标：
     /// <c>[field: ResetStatic] public static event Action Changed;</c>。
+    /// 自动属性可直接标注或使用 field: 目标，效果相同。
     /// 仅在 Editor 关闭 Domain Reload 时执行；Player 每次启动都是新域，不产生运行时开销。
     /// </summary>
-    [AttributeUsage(AttributeTargets.Field, AllowMultiple = false, Inherited = false)]
+    [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property, AllowMultiple = false, Inherited = false)]
     public sealed class ResetStaticAttribute : Attribute
     {
         public ResetStaticAttribute(ResetMode mode = ResetMode.Default)

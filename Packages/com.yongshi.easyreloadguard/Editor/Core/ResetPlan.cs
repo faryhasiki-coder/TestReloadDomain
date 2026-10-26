@@ -38,6 +38,7 @@ namespace EasyReloadGuard.Editor
             var plan = new ResetPlan();
             foreach (var field in TypeCache.GetFieldsWithAttribute<ResetStaticAttribute>().Where(IsProjectMember))
                 plan.AddField(field, field.GetCustomAttribute<ResetStaticAttribute>(false).Mode, null);
+            ScanPropertyAttributes(plan);
             foreach (var method in TypeCache.GetMethodsWithAttribute<ResetMethodAttribute>().Where(IsProjectMember))
                 plan.AddMethod(method, method.GetCustomAttribute<ResetMethodAttribute>(false).Order, true, null);
             foreach (var method in TypeCache.GetMethodsWithAttribute<OnExitPlayModeAttribute>().Where(IsProjectMember))
@@ -54,7 +55,42 @@ namespace EasyReloadGuard.Editor
             return plan;
         }
 
+        /// <summary>TypeCache 没有 GetPropertiesWithAttribute，手动扫描直接标注了 [ResetStatic] 的自动属性。</summary>
+        static void ScanPropertyAttributes(ResetPlan plan)
+        {
+            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                if (asm.IsDynamic || ReflectionUtil.IsTestAssembly(asm)) continue;
+                foreach (var type in ReflectionUtil.SafeGetTypes(asm))
+                {
+                    foreach (var prop in type.GetProperties(ReflectionUtil.StaticMembers))
+                    {
+                        var attr = prop.GetCustomAttribute<ResetStaticAttribute>(false);
+                        if (attr != null) plan.AddAutoProperty(prop, attr.Mode, null);
+                    }
+                }
+            }
+        }
+
         static bool IsProjectMember(MemberInfo member) => !ReflectionUtil.IsTestAssembly(member.DeclaringType.Assembly);
+
+        internal void AddAutoProperty(PropertyInfo prop, ResetMode mode, string source)
+        {
+            var backing = prop.DeclaringType.GetField(
+                $"<{prop.Name}>k__BackingField",
+                BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
+            if (backing != null)
+            {
+                if (!IsFieldHandled(backing))
+                    AddField(backing, mode, source);
+            }
+            else
+            {
+                Findings.Add(new Finding(RuleIds.InvalidDeclaration, Severity.Error,
+                    ReflectionUtil.Subject(prop),
+                    "[ResetStatic] 在属性上只支持自动属性（需编译器生成 backing field）；手写属性请标记底层字段"));
+            }
+        }
 
         internal void AddField(FieldInfo field, ResetMode mode, string source)
         {

@@ -47,6 +47,20 @@ namespace EasyReloadGuard
         }
 
         /// <summary>
+        /// 登记一个在每次进入 Play 时重复执行的重置动作（执行后自动重新登记）。
+        /// 适合 ScriptableObject 等 OnEnable 只调用一次的对象。Player 构建中调用点被编译器移除。
+        /// </summary>
+        [Conditional("UNITY_EDITOR")]
+        public static void RegisterPersistentReset(Action reset)
+        {
+#if UNITY_EDITOR
+            if (reset == null) throw new ArgumentNullException(nameof(reset));
+            void ReRegister() => RegisterReset(() => { reset(); ReRegister(); });
+            ReRegister();
+#endif
+        }
+
+        /// <summary>
         /// 运行时检测到无法恢复的残留状态时调用：下次进入 Play 前强制重载域。Player 构建中调用点被移除。
         /// </summary>
         [Conditional("UNITY_EDITOR")]
