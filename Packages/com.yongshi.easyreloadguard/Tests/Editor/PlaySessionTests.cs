@@ -1,3 +1,4 @@
+using System;
 using NUnit.Framework;
 
 namespace EasyReloadGuard.Editor.Tests
