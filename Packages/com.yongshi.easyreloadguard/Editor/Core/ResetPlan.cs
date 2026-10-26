@@ -38,7 +38,7 @@ namespace EasyReloadGuard.Editor
             var plan = new ResetPlan();
             foreach (var field in TypeCache.GetFieldsWithAttribute<ResetStaticAttribute>().Where(IsProjectMember))
                 plan.AddField(field, field.GetCustomAttribute<ResetStaticAttribute>(false).Mode, null);
-            ScanPropertyAttributes(plan);
+            ScanPropertyAndEventAttributes(plan);
             foreach (var method in TypeCache.GetMethodsWithAttribute<ResetMethodAttribute>().Where(IsProjectMember))
                 plan.AddMethod(method, method.GetCustomAttribute<ResetMethodAttribute>(false).Order, true, null);
             foreach (var method in TypeCache.GetMethodsWithAttribute<OnExitPlayModeAttribute>().Where(IsProjectMember))
@@ -55,8 +55,8 @@ namespace EasyReloadGuard.Editor
             return plan;
         }
 
-        /// <summary>TypeCache 没有 GetPropertiesWithAttribute，手动扫描直接标注了 [ResetStatic] 的自动属性。</summary>
-        static void ScanPropertyAttributes(ResetPlan plan)
+        /// <summary>TypeCache 没有 GetProperties/EventsWithAttribute，手动扫描直接标注了 [ResetStatic] 的自动属性和事件。</summary>
+        static void ScanPropertyAndEventAttributes(ResetPlan plan)
         {
             foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
             {
@@ -67,6 +67,12 @@ namespace EasyReloadGuard.Editor
                     {
                         var attr = prop.GetCustomAttribute<ResetStaticAttribute>(false);
                         if (attr != null) plan.AddAutoProperty(prop, attr.Mode, null);
+                    }
+
+                    foreach (var evt in type.GetEvents(ReflectionUtil.StaticMembers))
+                    {
+                        var attr = evt.GetCustomAttribute<ResetStaticAttribute>(false);
+                        if (attr != null) plan.AddEvent(evt, attr.Mode, null);
                     }
                 }
             }
@@ -89,6 +95,23 @@ namespace EasyReloadGuard.Editor
                 Findings.Add(new Finding(RuleIds.InvalidDeclaration, Severity.Error,
                     ReflectionUtil.Subject(prop),
                     "[ResetStatic] 在属性上只支持自动属性（需编译器生成 backing field）；手写属性请标记底层字段"));
+            }
+        }
+
+        internal void AddEvent(EventInfo evt, ResetMode mode, string source)
+        {
+            var backing = evt.DeclaringType.GetField(evt.Name,
+                BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
+            if (backing != null)
+            {
+                if (!IsFieldHandled(backing))
+                    AddField(backing, mode, source);
+            }
+            else
+            {
+                Findings.Add(new Finding(RuleIds.InvalidDeclaration, Severity.Error,
+                    ReflectionUtil.Subject(evt),
+                    "[ResetStatic] 在事件上只支持字段式事件（field-like event）；自定义 add/remove 事件请标记底层字段"));
             }
         }
 

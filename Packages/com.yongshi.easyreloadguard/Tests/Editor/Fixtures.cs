@@ -26,6 +26,15 @@ namespace EasyReloadGuard.Editor.Tests
         static int s_Manual;
         public static int ManualProp { get => s_Manual; set => s_Manual = value; }
 
+#pragma warning disable CS0067
+        [ResetStatic] public static event Action AutoEvent;
+#pragma warning restore CS0067
+
+        static Action s_CustomEventBacking;
+        public static event Action CustomEvent { add => s_CustomEventBacking += value; remove => s_CustomEventBacking -= value; }
+        public static bool HasAutoEventSubscribers => AutoEvent != null;
+        public static void ClearAutoEvent() => AutoEvent = null;
+
         public static bool HasChangedSubscribers => Changed != null;
 
         public static void ClearChanged() => Changed = null;

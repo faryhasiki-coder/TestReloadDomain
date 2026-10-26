@@ -25,6 +25,7 @@ namespace EasyReloadGuard.Editor.Tests
             ResetFixture.AutoProp = 0;
             ResetFixture.ManualProp = 0;
             ResetFixture.ClearChanged();
+            ResetFixture.ClearAutoEvent();
             GenericHolder<string>.Value = null;
         }
 
@@ -186,6 +187,29 @@ namespace EasyReloadGuard.Editor.Tests
             });
 
             Assert.AreEqual(1, plan.FieldSteps.Count);
+        }
+
+        [Test]
+        public void EventAttribute_AutoDetectsBackingField()
+        {
+            var evt = typeof(ResetFixture).GetEvent(nameof(ResetFixture.AutoEvent), k_Static);
+            var plan = Plan(p => p.AddEvent(evt, ResetMode.Default, null));
+            RunEnter(plan);
+            ResetFixture.AutoEvent += () => { };
+            RunEnter(plan);
+
+            Assert.IsFalse(ResetFixture.HasAutoEventSubscribers);
+            Assert.IsEmpty(plan.Findings);
+        }
+
+        [Test]
+        public void EventAttribute_ReportsErrorForCustomAccessorEvent()
+        {
+            var evt = typeof(ResetFixture).GetEvent(nameof(ResetFixture.CustomEvent), k_Static);
+            var plan = Plan(p => p.AddEvent(evt, ResetMode.Default, null));
+
+            Assert.IsEmpty(plan.FieldSteps);
+            Assert.AreEqual(1, plan.Findings.Count(f => f.RuleId == RuleIds.InvalidDeclaration));
         }
 
         [Test]
