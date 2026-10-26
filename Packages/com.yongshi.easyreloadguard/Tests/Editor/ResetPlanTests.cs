@@ -22,6 +22,8 @@ namespace EasyReloadGuard.Editor.Tests
             ResetFixture.Mutable = new List<int>();
             ResetFixture.Calls.Clear();
             ResetFixture.Property = 0;
+            ResetFixture.AutoProp = 0;
+            ResetFixture.ManualProp = 0;
             ResetFixture.ClearChanged();
             GenericHolder<string>.Value = null;
         }
@@ -146,6 +148,44 @@ namespace EasyReloadGuard.Editor.Tests
             Assert.AreEqual(1, plan.FieldSteps.Count);
             Assert.IsNull(GenericHolder<string>.Value);
             Assert.IsTrue(plan.Findings.Any(f => f.RuleId == RuleIds.GenericExpansion && f.Severity == Severity.Info));
+        }
+
+        [Test]
+        public void PropertyAttribute_AutoDetectsBackingField()
+        {
+            var prop = typeof(ResetFixture).GetProperty(nameof(ResetFixture.AutoProp), k_Static);
+            var plan = Plan(p => p.AddAutoProperty(prop, ResetMode.Default, null));
+            RunEnter(plan);
+            ResetFixture.AutoProp = 42;
+            RunEnter(plan);
+
+            Assert.AreEqual(0, ResetFixture.AutoProp);
+            Assert.IsEmpty(plan.Findings);
+        }
+
+        [Test]
+        public void PropertyAttribute_ReportsErrorForNonAutoProperty()
+        {
+            var prop = typeof(ResetFixture).GetProperty(nameof(ResetFixture.ManualProp), k_Static);
+            var plan = Plan(p => p.AddAutoProperty(prop, ResetMode.Default, null));
+
+            Assert.IsEmpty(plan.FieldSteps);
+            Assert.AreEqual(1, plan.Findings.Count(f => f.RuleId == RuleIds.InvalidDeclaration));
+        }
+
+        [Test]
+        public void PropertyAttribute_SkipsDuplicateWhenBackingFieldAlreadyHandled()
+        {
+            var prop = typeof(ResetFixture).GetProperty(nameof(ResetFixture.AutoProp), k_Static);
+            var backing = typeof(ResetFixture).GetField("<AutoProp>k__BackingField",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            var plan = Plan(p =>
+            {
+                p.AddField(backing, ResetMode.Default, null);
+                p.AddAutoProperty(prop, ResetMode.Default, null);
+            });
+
+            Assert.AreEqual(1, plan.FieldSteps.Count);
         }
 
         [Test]

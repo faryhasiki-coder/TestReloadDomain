@@ -21,6 +21,11 @@ namespace EasyReloadGuard.Editor.Tests
 
         public static int Property { get; set; }
 
+        [ResetStatic] public static int AutoProp { get; set; }
+
+        static int s_Manual;
+        public static int ManualProp { get => s_Manual; set => s_Manual = value; }
+
         public static bool HasChangedSubscribers => Changed != null;
 
         public static void ClearChanged() => Changed = null;
