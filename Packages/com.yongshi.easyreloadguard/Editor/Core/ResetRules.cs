@@ -10,10 +10,12 @@ namespace EasyReloadGuard.Editor
     /// <summary>声明合法性规则与类型分析。返回 null 表示合法，否则返回面向人的错误说明。</summary>
     internal static class ResetRules
     {
+        public const string InstanceStateError = "[ResetStatic] 只能用于静态成员；实例状态由对象自身生命周期管理";
+
         public static string ValidateField(FieldInfo field, ResetMode mode, out MethodInfo clear)
         {
             clear = null;
-            if (!field.IsStatic) return "[ResetStatic] 只能用于静态字段；实例状态由对象自身生命周期管理";
+            if (!field.IsStatic) return InstanceStateError;
             if (field.IsLiteral) return "const 字段不会改变，无需重置";
             if (field.IsDefined(typeof(ReloadSafeAttribute), false))
                 return "同时标记了 [ResetStatic] 与 [ReloadSafe]，语义冲突";
@@ -46,7 +48,7 @@ namespace EasyReloadGuard.Editor
         {
             if (!method.IsStatic) return "只能用于静态方法";
             if (method.GetParameters().Length != 0) return "方法必须无参数";
-            if (method.ContainsGenericParameters) return "不能是泛型方法，也不能位于未闭合的泛型类型中；泛型状态请用 PlaySession.RegisterReset";
+            if (method.ContainsGenericParameters) return "不能是泛型方法，也不能位于未闭合的泛型类型中；泛型状态请在 Editor 适配器中按闭合类型用 ResetField 或 OnReset 声明";
             if (method.ReturnType != typeof(void)) return "返回值必须为 void";
             if (method.IsDefined(typeof(AsyncStateMachineAttribute), false)) return "不能是 async 方法：重置与释放必须同步完成";
             return null;
@@ -78,7 +80,7 @@ namespace EasyReloadGuard.Editor
             foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
             {
                 if (assembly.IsDynamic) continue;
-                if (assembly != definitionAssembly && !References(assembly, definitionName)) continue;
+                if (assembly != definitionAssembly && !ReflectionUtil.References(assembly, definitionName)) continue;
                 foreach (var type in ReflectionUtil.SafeGetTypes(assembly))
                 {
                     for (var current = type.BaseType; current != null; current = current.BaseType)
@@ -103,14 +105,6 @@ namespace EasyReloadGuard.Editor
                 if (method.IsDefined(typeof(InitializeOnEnterPlayModeAttribute), false)) return true;
             }
 
-            return false;
-        }
-
-        static bool References(Assembly assembly, string name)
-        {
-            foreach (var reference in assembly.GetReferencedAssemblies())
-                if (reference.Name == name)
-                    return true;
             return false;
         }
     }

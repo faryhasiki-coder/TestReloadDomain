@@ -26,13 +26,15 @@ namespace EasyReloadGuard.Editor
             return keys;
         }
 
-        /// <summary>标记基线内的问题；基线中已不对应任何当前问题的条目报告为提示。</summary>
+        /// <summary>
+        /// 按当前基线重新标记每个问题；基线中已不对应任何当前问题的条目报告为提示。
+        /// 适配器问题（RG023）来自按域缓存的重置计划，同一 Finding 会被多次检查复用，因此每次都要写回 true/false。
+        /// </summary>
         public static void Apply(AuditReport report, HashSet<string> keys)
         {
             var present = new HashSet<string>(report.Findings.Select(f => f.Key), StringComparer.Ordinal);
             foreach (var finding in report.Findings)
-                if (finding.Baselinable && keys.Contains(finding.Key))
-                    finding.Baselined = true;
+                finding.Baselined = finding.Baselinable && keys.Contains(finding.Key);
 
             foreach (var key in keys.Where(k => !present.Contains(k)).OrderBy(k => k, StringComparer.Ordinal))
                 report.Findings.Add(new Finding(RuleIds.StaleBaseline, Severity.Info, key, "基线条目已不存在对应问题，可删除该行"));

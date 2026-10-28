@@ -24,8 +24,8 @@ namespace EasyReloadGuard.Editor
         public bool reloadOnResetFailure = true;
         public bool verboseLog;
 
-        [Tooltip("额外纳入检查的包名（如 com.company.gameplay）。默认只检查 Assets 下的程序集。")]
-        public List<string> includedPackages = new List<string>();
+        [Tooltip("不参与检查的包名（如 com.unity.render-pipelines.universal）。默认检查 Assets 与全部包。")]
+        public List<string> excludedPackages = new List<string>();
 
         [Tooltip("不参与检查的程序集名。")]
         public List<string> excludedAssemblies = new List<string>();

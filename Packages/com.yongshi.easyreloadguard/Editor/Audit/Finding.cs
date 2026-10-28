@@ -13,12 +13,15 @@ namespace EasyReloadGuard.Editor
         public const string StaticUnityObject = "RG002";
         public const string MutableStatic = "RG003";
         public const string ReadonlyState = "RG004";
+        public const string AsyncVoid = "RG005";
+        public const string AsyncResource = "RG006";
         public const string InvalidDeclaration = "RG010";
         public const string MissingReason = "RG011";
         public const string GenericExpansion = "RG012";
         public const string AdapterBroken = "RG020";
         public const string AdapterUnverified = "RG021";
         public const string AdapterRequiresReload = "RG022";
+        public const string AdapterKnownIssue = "RG023";
         public const string StaleBaseline = "RG030";
         public const string ScanFailed = "RG040";
     }

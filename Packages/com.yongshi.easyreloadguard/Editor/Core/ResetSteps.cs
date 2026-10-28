@@ -73,14 +73,23 @@ namespace EasyReloadGuard.Editor
             }
         }
 
-        /// <summary>首次执行时记录初值；Default 模式下初值非 default 往往意味着选错了模式。</summary>
+        /// <summary>
+        /// 首次执行时观察初值：InitialValue 记为基准值；Default 模式下初值非 default 往往意味着选错了模式。
+        /// 只有 InitialValue 长期持有初值，Default/Clear 不保留字段曾引用的对象。
+        /// </summary>
         void Observe()
         {
             m_Observed = true;
-            m_Initial = Field.GetValue(null);
-            if (Mode == ResetMode.Default && !Equals(m_Initial, DefaultOf(Field.FieldType)))
+            if (Mode == ResetMode.Clear) return;
+
+            var value = Field.GetValue(null);
+            if (Mode == ResetMode.InitialValue)
             {
-                Log.Warning($"{Name} 首次进入 Play 时的值为 {m_Initial}，ResetMode.Default 会把它写回 default。" +
+                m_Initial = value;
+            }
+            else if (!Equals(value, DefaultOf(Field.FieldType)))
+            {
+                Log.Warning($"{Name} 首次进入 Play 时的值为 {value}，ResetMode.Default 会把它写回 default。" +
                             "若这是字段初值：值类型/string 改用 ResetMode.InitialValue，集合改用 ResetMode.Clear，其余改用 [ResetMethod]。");
             }
         }

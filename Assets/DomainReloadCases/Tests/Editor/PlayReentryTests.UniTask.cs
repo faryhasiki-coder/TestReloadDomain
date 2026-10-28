@@ -5,7 +5,6 @@ using System.Diagnostics;
 using System.Reflection;
 using System.Threading;
 using Cysharp.Threading.Tasks;
-using EasyReloadGuard;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEngine.TestTools;
@@ -27,7 +26,7 @@ namespace DomainReloadCases.Tests
         static readonly ManualResetEventSlim s_WorkGate = new ManualResetEventSlim(false);
         static int s_BlockedWorkers;
 
-        /// <summary>修复：任务以 Play 会话为 owner，退出时后台工作结束、finally 执行，会话内的加载照常完成。</summary>
+        /// <summary>修复：任务以加载器自己的取消源为 owner，退出时 CancelAll 结束后台工作、执行 finally，会话内的加载照常完成。</summary>
         [UnityTest, Order(2)]
         public IEnumerator Fix_UniTaskWorkEndsWithSession()
         {
@@ -37,7 +36,7 @@ namespace DomainReloadCases.Tests
             for (var cycle = 1; cycle <= k_Cycles; cycle++)
             {
                 yield return new EnterPlayMode(false);
-                Assert.AreEqual(0, Volatile.Read(ref s_BlockedWorkers), "上一会话的后台工作应已随令牌取消结束");
+                Assert.AreEqual(0, Volatile.Read(ref s_BlockedWorkers), "上一会话的后台工作应已随 CancelAll 结束");
 
                 GuardedUniTaskLoader.StartLoad(GuardedWork);
                 s_WorkGate.Set();
@@ -55,19 +54,20 @@ namespace DomainReloadCases.Tests
                 var heldAfterExit = GuardedUniTaskLoader.HeldResources;
                 yield return WaitFor(() => Volatile.Read(ref s_BlockedWorkers) == 0);
                 var blockedAfterExit = Volatile.Read(ref s_BlockedWorkers);
-                observed.Add($"第 {cycle} 轮：session={PlaySession.Id} completedLoads=1 " +
+                observed.Add($"第 {cycle} 轮：completedLoads=1 " +
                              $"退出后 heldResources={heldAfterExit} blockedWorkers={blockedAfterExit}");
 
-                Assert.AreEqual(0, heldAfterExit, "退出 Play 时 Delay 应随令牌取消并执行 finally");
-                Assert.AreEqual(0, blockedAfterExit, "退出 Play 时后台工作应随令牌取消结束");
+                Assert.AreEqual(0, heldAfterExit, "退出 Play 时 Delay 应随 CancelAll 结束并执行 finally");
+                Assert.AreEqual(0, blockedAfterExit, "退出 Play 时后台工作应随 CancelAll 结束");
             }
 
-            Report("UniTask 修复（PlaySession.Token + PlaySessionStamp）", observed);
+            Report("UniTask 修复（业务自有取消源 + [OnExitPlayMode] CancelAll）", observed);
         }
 
         /// <summary>
-        /// 复现：任务不传令牌时，后台工作跨会话完成并写入新会话；被丢弃的 Delay 不执行 finally，资源计数逐轮累积；
-        /// UniTask 自身每轮多注册一组 playModeStateChanged 处理器（第三方残留，仅记录）。
+        /// 复现：任务不传令牌时，后台工作跨会话完成并写入新会话；被丢弃的 Delay 不执行 finally，资源计数逐轮累积。
+        /// UniTask 自身每轮多注册一组 playModeStateChanged 处理器，由项目临时适配器（Assets/ReloadGuardProjectAdapters）
+        /// 在进入 Play 时移除上一组，处理器数量应保持不变。
         /// </summary>
         [UnityTest, Order(4)]
         public IEnumerator Repro_UniTaskWorkLeaksAcrossSessions()
@@ -78,14 +78,12 @@ namespace DomainReloadCases.Tests
             var startHandlers = CountUniTaskPlayModeHandlers();
             Assert.GreaterOrEqual(startHandlers, 0, k_HandlerReflectionHint);
             var previousLoad = 0;
-            var handlersPerSession = 0;
             var observed = new List<string>();
 
             for (var cycle = 1; cycle <= k_Cycles; cycle++)
             {
                 yield return new EnterPlayMode(false);
                 var handlers = CountUniTaskPlayModeHandlers() - startHandlers;
-                if (cycle == 1) handlersPerSession = handlers;
 
                 var staleWrite = "无";
                 if (cycle > 1)
@@ -97,7 +95,7 @@ namespace DomainReloadCases.Tests
                     s_WorkGate.Reset();
                     Assert.AreEqual(expected, LeakyUniTaskLoader.CompletedLoads - startCompleted, "上一会话的结果应写入本会话");
                     Assert.AreEqual(previousLoad, LeakyUniTaskLoader.LastCompletedLoad);
-                    staleWrite = $"上一轮的加载#{previousLoad}写入了会话{PlaySession.Id}";
+                    staleWrite = $"上一轮的加载#{previousLoad}写入了第 {cycle} 轮";
                 }
 
                 Assert.AreEqual(cycle - 1, LeakyUniTaskLoader.HeldResources - startHeld, "上一会话的 Delay 被丢弃，finally 未执行");
@@ -105,16 +103,16 @@ namespace DomainReloadCases.Tests
                 previousLoad = LeakyUniTaskLoader.StartedLoads;
                 LeakyUniTaskLoader.HoldResource(k_HoldDuration);
                 var held = LeakyUniTaskLoader.HeldResources - startHeld;
-                observed.Add($"第 {cycle} 轮：session={PlaySession.Id} heldResources={held} staleWrite={staleWrite} " +
+                observed.Add($"第 {cycle} 轮：heldResources={held} staleWrite={staleWrite} " +
                              $"uniTaskPlayModeHandlers=+{handlers}");
 
                 Assert.AreEqual(cycle, held, "资源计数应逐轮累积");
-                Assert.Greater(handlersPerSession, 0, "关闭 Domain Reload 时 PlayerLoopHelper.Init 应注册新的处理器");
-                Assert.AreEqual(cycle * handlersPerSession, handlers, "UniTask 的 playModeStateChanged 处理器应逐轮累积");
+                Assert.Greater(startHandlers, 0, k_HandlerReflectionHint);
+                Assert.AreEqual(0, handlers, "项目临时适配器应移除上一次初始化的处理器，UniTask 处理器不应逐轮累积");
                 yield return new ExitPlayMode();
             }
 
-            Report("UniTask 复现（未处理）", observed);
+            Report("UniTask 复现（业务未处理；UniTask 处理器由项目临时适配器处理）", observed);
         }
 
         /// <summary>

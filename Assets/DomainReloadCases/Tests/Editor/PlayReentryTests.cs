@@ -1,8 +1,6 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Threading;
-using EasyReloadGuard;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
@@ -126,27 +124,19 @@ namespace DomainReloadCases.Tests
             Report("复现（未处理）", observed);
         }
 
-        /// <summary>修复：声明处理方式后每轮都回到干净状态，旧会话的令牌与标记失效。</summary>
+        /// <summary>修复：声明处理方式后每轮都回到干净状态。</summary>
         [UnityTest, Order(1)]
         public IEnumerator Fix_GuardedStateIsResetEachSession()
         {
             var observed = new List<string>();
-            var previousToken = default(CancellationToken);
-            var previousStamp = default(PlaySessionStamp);
 
             for (var cycle = 1; cycle <= k_Cycles; cycle++)
             {
                 yield return new EnterPlayMode(false);
-                if (cycle > 1)
-                {
-                    Assert.IsTrue(previousToken.IsCancellationRequested, "上一会话的 Token 应已取消");
-                    Assert.IsFalse(previousStamp.IsAlive, "上一会话的标记应失效");
-                }
-
                 Assert.AreEqual("initial", GuardedCaseCounter.Label, "InitialValue 应恢复初值");
                 new GameObject("GuardedCase").AddComponent<GuardedCaseCounter>();
                 var handlers = CountLogHandlers(() => GuardedCaseCounter.LogCallbackCount);
-                observed.Add($"第 {cycle} 轮：session={PlaySession.Id} created={GuardedCaseCounter.CreatedCount} " +
+                observed.Add($"第 {cycle} 轮：created={GuardedCaseCounter.CreatedCount} " +
                              $"instances={GuardedCaseCounter.Instances.Count} tickedSubscribers={GuardedCaseCounter.TickedSubscriberCount} " +
                              $"logHandlers={handlers} label={GuardedCaseCounter.Label}");
 
@@ -154,12 +144,8 @@ namespace DomainReloadCases.Tests
                 Assert.AreEqual(1, GuardedCaseCounter.Instances.Count);
                 Assert.AreEqual(1, GuardedCaseCounter.TickedSubscriberCount);
                 Assert.AreEqual(1, handlers);
-                Assert.IsTrue(GuardedCaseCounter.LastStamp.IsAlive);
-                Assert.IsFalse(GuardedCaseCounter.LastToken.IsCancellationRequested);
 
                 GuardedCaseCounter.Label = "changed in session " + cycle;
-                previousToken = GuardedCaseCounter.LastToken;
-                previousStamp = GuardedCaseCounter.LastStamp;
                 yield return new ExitPlayMode();
             }
 

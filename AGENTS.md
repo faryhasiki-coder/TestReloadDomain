@@ -33,6 +33,7 @@
 | 测试流水线 | `Tools/UnityCI/Run-UnityTests.ps1`：编辑器占用工程时镜像到 `%TEMP%\EasyReloadGuardCI` 后用 batchmode 运行测试和检查 |
 | 检查基线 | `ProjectSettings/EasyReloadGuardBaseline.txt`，只含复现案例故意保留的问题 |
 | 接入样例 | `Assets/ReloadIntegrationSamples`（程序集 `ReloadIntegrationSamples`，不引用包）：接入**前**的实战代码，供包做接入测试，`Games/` 下为原样导入的开源小游戏；验收测试 `ReloadIntegrationSamples.Tests` 为 Explicit，接入前预期失败。主线不得把样例改成接入后形态。规格见 `TestCases/Cases/06-IntegrationSamples.md` |
+| 临时项目适配器 | `Assets/ReloadGuardProjectAdapters`（程序集 `ReloadGuardProjectAdapters.Editor`）：2026-10-27 新增，反射移除 UniTask 2.5.11 旧初始化留下的 `playModeStateChanged` 回调，仅为本测试工程的临时措施；正式落地改为在 UniTask 源码中修复 |
 | 编辑器实时控制 | `com.unity.pipeline` `0.8.0-exp.1`（内部源 `upm.in.ys4fun.com`）。读取 `Library/Pipeline/.unity-pipeline-port` 获取端口和令牌，向 `127.0.0.1` 发 HTTP 请求；令牌不要打印或保存。编辑器在后台时先开启 `set_autotick`，结束后检查交互模式是否已恢复 |
 
 Unity 6000.3 注意：`EditorSettings.enterPlayModeOptionsEnabled` 由 options 推导。修改时先写 options，再写 `enabled = options != None`；只改动内存、不想改写磁盘时，对 `EditorSettings.asset` 清除脏标记。磁盘上旧版的 `1/0` 组合无法通过 API 原样写回。
