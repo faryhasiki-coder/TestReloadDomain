@@ -7,8 +7,9 @@ namespace EasyReloadGuard.Editor
 {
     /// <summary>
     /// 执行顺序（关闭 Domain Reload 时）：
-    /// 进入 Play（SubsystemRegistration）：PlaySession.Begin → RegisterReset 登记项 → [ResetStatic] 字段 → [ResetMethod]/适配器重置（按 Order）。
-    /// 退出 Play（ExitingPlayMode，始终执行）：PlaySession.Token 取消 → [OnExitPlayMode]/适配器释放（按 Order）。
+    /// 进入 Play（SubsystemRegistration）：RegisterReset/RegisterPersistentReset 登记项 → [ResetStatic] 字段
+    ///   → [ResetMethod]/适配器重置（按 Order）。
+    /// 退出 Play（ExitingPlayMode，始终执行）：[OnExitPlayMode]/适配器释放（按 Order）。
     /// 单步失败不中断后续步骤，汇总后按设置登记强制重载。
     /// </summary>
     internal static class ResetPipeline
@@ -16,14 +17,14 @@ namespace EasyReloadGuard.Editor
         internal static void RunEnter()
         {
             DomainState.MarkPlayed();
-            var registered = PlaySession.DrainRegisteredResets();
+            var failures = new List<string>();
+            var registered = PlaySession.Resets.TakeForEnter();
             if (!EditorCompat.DomainReloadDisabled) return;
 
             if (!TryGetPlan(out var plan)) return;
             var stopwatch = Stopwatch.StartNew();
-            var failures = new List<string>();
             for (var i = 0; i < registered.Count; i++)
-                Execute($"PlaySession.RegisterReset 登记项 #{i + 1}", registered[i], failures);
+                Execute($"PlaySession 登记项 #{i + 1}", registered[i], failures);
             foreach (var step in plan.FieldSteps) Execute(step.Name, step.Execute, failures);
             foreach (var step in plan.EnterSteps) Execute(step.Name, step.Execute, failures);
             stopwatch.Stop();
@@ -34,9 +35,12 @@ namespace EasyReloadGuard.Editor
 
         internal static void RunExit()
         {
+            if (TryGetPlan(out var plan)) RunExit(plan);
+        }
+
+        internal static void RunExit(ResetPlan plan)
+        {
             var failures = new List<string>();
-            PlaySession.End();
-            if (!TryGetPlan(out var plan)) return;
             foreach (var step in plan.ExitSteps) Execute(step.Name, step.Execute, failures);
             Finish("退出 Play 释放", plan.ExitSteps.Count, failures, string.Empty);
         }
@@ -65,10 +69,15 @@ namespace EasyReloadGuard.Editor
             }
             catch (Exception e)
             {
-                var cause = e is TargetInvocationException && e.InnerException != null ? e.InnerException : e;
-                failures.Add(name);
-                Log.Exception($"{name} 执行失败，后续步骤继续执行。", cause);
+                Fail(name, e, failures);
             }
+        }
+
+        static void Fail(string name, Exception exception, List<string> failures)
+        {
+            var cause = exception is TargetInvocationException && exception.InnerException != null ? exception.InnerException : exception;
+            failures.Add(name);
+            Log.Exception($"{name} 执行失败，后续步骤继续执行。", cause);
         }
 
         static void Finish(string phase, int total, List<string> failures, string detail)

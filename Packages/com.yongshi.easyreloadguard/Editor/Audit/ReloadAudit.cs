@@ -3,6 +3,8 @@ using System.Collections;
 using System.IO;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace EasyReloadGuard.Editor
 {
@@ -81,6 +83,9 @@ namespace EasyReloadGuard.Editor
                 return;
             }
 
+            // async void 与静态状态的处理方式无关，owner 自行管理或沿用旧写法的类型也报告
+            ReportAsyncVoid(type, report);
+
             if (plan.IsOwnerManaged(type)) return;
             if (ResetRules.IsLegacySelfReset(type))
             {
@@ -131,6 +136,14 @@ namespace EasyReloadGuard.Editor
                         $"{name} 在下次 Play 时会指向已销毁对象（== null 但不是真 null），单例常见。用 [ResetStatic] 置空。");
             }
 
+            if (IsAsyncResource(fieldType))
+            {
+                return Legacy(RuleIds.AsyncResource, Severity.Warning, subject,
+                    $"{name}（{fieldType.Name}）持有的异步工作或取消源会跨 Play 会话存活。" +
+                    "由业务 owner 在会话结束时取消/释放（自有取消源、Application.exitCancellationToken 或 destroyCancellationToken），" +
+                    "业务已有的停止方法可标注 [OnExitPlayMode]；只置 null 不会停止已在运行的工作。");
+            }
+
             if (field.IsInitOnly)
             {
                 if (fieldType.IsValueType || fieldType == typeof(string) || fieldType == typeof(Type) || fieldType == typeof(object))
@@ -157,6 +170,32 @@ namespace EasyReloadGuard.Editor
 
         static Finding Legacy(string rule, Severity severity, string subject, string message) =>
             new Finding(rule, severity, subject, message, baselinable: true);
+
+        /// <summary>
+        /// async void 无法被调用方等待或取消，关闭 Domain Reload 时其延续会在下一会话继续执行。
+        /// 只检查直接声明的方法；lambda 编译为编译器生成类型的方法，不在检查范围内。
+        /// </summary>
+        static void ReportAsyncVoid(Type type, AuditReport report)
+        {
+            foreach (var method in type.GetMethods(ReflectionUtil.DeclaredMembers))
+            {
+                if (method.ReturnType != typeof(void) || !method.IsDefined(typeof(AsyncStateMachineAttribute), false)) continue;
+                report.Findings.Add(Legacy(RuleIds.AsyncVoid, Severity.Warning, ReflectionUtil.Subject(method),
+                    $"async void {ReflectionUtil.Describe(method)} 的延续会跨 Play 会话执行，旧结果可能写入新会话。" +
+                    "由业务 owner 用自有取消源、Application.exitCancellationToken 或 destroyCancellationToken 结束它，并在 await 后不再写入已失效的状态。"));
+            }
+        }
+
+        static bool IsAsyncResource(Type type)
+        {
+            if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(ValueTask<>)) return true;
+            return type == typeof(ValueTask) ||
+                   typeof(Task).IsAssignableFrom(type) ||
+                   typeof(CancellationTokenSource).IsAssignableFrom(type) ||
+                   typeof(Thread).IsAssignableFrom(type) ||
+                   type == typeof(System.Threading.Timer) ||
+                   typeof(System.Timers.Timer).IsAssignableFrom(type);
+        }
 
         static void CheckReason(ReloadSafeAttribute attribute, string subject, AuditReport report)
         {

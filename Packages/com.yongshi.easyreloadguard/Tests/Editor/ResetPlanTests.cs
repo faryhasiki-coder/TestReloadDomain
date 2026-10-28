@@ -62,6 +62,18 @@ namespace EasyReloadGuard.Editor.Tests
             Assert.AreEqual("init", ResetFixture.Label);
         }
 
+        [TestCase(ResetMode.Default)]
+        [TestCase(ResetMode.Clear)]
+        public void DefaultAndClear_DoNotRetainObservedReference(ResetMode mode)
+        {
+            var plan = Plan(p => p.AddField(Field(nameof(ResetFixture.Mutable)), mode, null));
+            RunEnter(plan);
+            ResetFixture.Mutable = new List<int> { 1 };
+            RunEnter(plan);
+
+            Assert.IsNull(k_Initial.GetValue(plan.FieldSteps.Single()), "只有 InitialValue 需要长期持有初值");
+        }
+
         [Test]
         public void Clear_EmptiesReadonlyCollectionAndKeepsReference()
         {
@@ -190,6 +202,23 @@ namespace EasyReloadGuard.Editor.Tests
         }
 
         [Test]
+        public void MemberAttributes_DiscoverStaticMembersAndRejectInstanceMembers()
+        {
+            var plan = Plan(p =>
+            {
+                p.AddMemberAttributes(typeof(ResetFixture));
+                p.AddMemberAttributes(typeof(InstanceAttributeFixture));
+            });
+
+            CollectionAssert.AreEquivalent(new[] { "<AutoProp>k__BackingField", nameof(ResetFixture.AutoEvent) },
+                plan.FieldSteps.Select(s => s.Field.Name));
+            var errors = plan.Findings.Where(f => f.RuleId == RuleIds.InvalidDeclaration).ToList();
+            Assert.AreEqual(2, errors.Count);
+            Assert.IsTrue(errors.All(f => f.Subject.Contains(nameof(InstanceAttributeFixture))));
+            Assert.IsTrue(errors.All(f => f.Severity == Severity.Error && !f.Baselinable), "声明错误不可入基线");
+        }
+
+        [Test]
         public void EventAttribute_AutoDetectsBackingField()
         {
             var evt = typeof(ResetFixture).GetEvent(nameof(ResetFixture.AutoEvent), k_Static);
@@ -238,6 +267,19 @@ namespace EasyReloadGuard.Editor.Tests
         }
 
         [Test]
+        public void Adapter_KnownIssueReportsBaselinableWarningAndChecksMember()
+        {
+            var plan = Plan(p => p.ApplyAdapter(typeof(KnownIssueAdapter), NoPackages));
+
+            var issue = plan.Findings.Single(f => f.RuleId == RuleIds.AdapterKnownIssue);
+            Assert.AreEqual(Severity.Warning, issue.Severity);
+            Assert.IsTrue(issue.Baselinable);
+            StringAssert.EndsWith("." + nameof(ResetFixture.Counter), issue.Subject);
+            Assert.AreEqual(1, plan.Findings.Count(f => f.RuleId == RuleIds.AdapterBroken), "成员不存在时报告适配器失效");
+            Assert.IsTrue(plan.IsSelfHandled(plan.Adapters.Single().Target));
+        }
+
+        [Test]
         public void Adapter_UnverifiedVersionWarnsButStillApplies()
         {
             var plan = Plan(p => p.ApplyAdapter(typeof(UnverifiedAdapter), NoPackages));
@@ -258,6 +300,8 @@ namespace EasyReloadGuard.Editor.Tests
         }
 
         static readonly IReadOnlyDictionary<string, string> NoPackages = new Dictionary<string, string>();
+
+        static readonly FieldInfo k_Initial = typeof(FieldResetStep).GetField("m_Initial", BindingFlags.Instance | BindingFlags.NonPublic);
 
         static FieldInfo Field(string name) => typeof(ResetFixture).GetField(name, k_Static);
 

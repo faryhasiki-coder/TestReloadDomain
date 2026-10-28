@@ -24,6 +24,20 @@ namespace EasyReloadGuard.Editor.Tests
         }
 
         [Test]
+        public void ScanType_ReportsAsyncWorkThatOutlivesSession()
+        {
+            var report = Scan(new ResetPlan(), typeof(AuditFixture));
+
+            Assert.AreEqual(RuleIds.AsyncVoid, RuleOf(report, nameof(AuditFixture.FireAndForget)));
+            Assert.IsNull(RuleOf(report, nameof(AuditFixture.ReturnsTask)), "返回 Task 的 async 方法可由调用方等待与取消，不报告");
+            Assert.AreEqual(RuleIds.AsyncResource, RuleOf(report, nameof(AuditFixture.Cancellation)));
+            Assert.AreEqual(RuleIds.AsyncResource, RuleOf(report, nameof(AuditFixture.Pending)));
+            Assert.AreEqual(RuleIds.AsyncResource, RuleOf(report, nameof(AuditFixture.Ticker)), "readonly 计时器同样跨会话运行");
+            Assert.IsTrue(report.Findings.Where(f => f.RuleId == RuleIds.AsyncVoid || f.RuleId == RuleIds.AsyncResource)
+                .All(f => f.Severity == Severity.Warning && f.Baselinable));
+        }
+
+        [Test]
         public void ScanType_SkipsHandledFieldsAndOwnerManagedTypes()
         {
             var plan = new ResetPlan();
@@ -55,6 +69,30 @@ namespace EasyReloadGuard.Editor.Tests
             Assert.AreEqual(1, report.Findings.Count(f => f.RuleId == RuleIds.StaleBaseline), "仍存在的问题不应报为过期");
         }
 
+        [Test]
+        public void Baseline_RemovedKeyRestoresReusedPlanFinding()
+        {
+            // 同域内多次检查复用同一计划及其 Finding（ReloadAudit.Run 的 AddRange），撤销基线后必须恢复为未基线
+            var plan = new ResetPlan();
+            var issue = new Finding(RuleIds.AdapterKnownIssue, Severity.Warning, "Vendor|Vendor.Cache.s_Instance", "known issue", baselinable: true);
+            var broken = new Finding(RuleIds.AdapterBroken, Severity.Error, "Vendor.Adapter", "broken");
+            plan.Findings.Add(issue);
+            plan.Findings.Add(broken);
+
+            var first = ReportOf(plan);
+            Baseline.Apply(first, new HashSet<string> { issue.Key, broken.Key });
+            Assert.IsTrue(issue.Baselined);
+            Assert.AreEqual(0, first.Count(Severity.Warning));
+            Assert.IsFalse(broken.Baselined, "适配器失效不可入基线");
+
+            var second = ReportOf(plan);
+            Baseline.Apply(second, new HashSet<string> { broken.Key });
+            Assert.IsFalse(issue.Baselined, "基线条目移除后应恢复为未基线");
+            Assert.AreEqual(1, second.Count(Severity.Warning));
+            Assert.AreEqual(0, second.BaselinedCount);
+            Assert.IsTrue(broken.IsBlocking);
+        }
+
         [TestCase("Packages/com.example.tool/Runtime/A.cs", "com.example.tool")]
         [TestCase("Library/PackageCache/com.unity.inputsystem@02433b2481ab/X.dll", "com.unity.inputsystem")]
         [TestCase("Assets/Plugins/Packages/Vendor/X.dll", null)]
@@ -76,6 +114,13 @@ namespace EasyReloadGuard.Editor.Tests
         {
             var report = new AuditReport(plan);
             foreach (var type in types) ReloadAudit.ScanType(type, plan, report);
+            return report;
+        }
+
+        static AuditReport ReportOf(ResetPlan plan)
+        {
+            var report = new AuditReport(plan);
+            report.Findings.AddRange(plan.Findings);
             return report;
         }
 

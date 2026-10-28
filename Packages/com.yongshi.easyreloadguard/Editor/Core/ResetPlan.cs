@@ -55,26 +55,35 @@ namespace EasyReloadGuard.Editor
             return plan;
         }
 
-        /// <summary>TypeCache 没有 GetProperties/EventsWithAttribute，手动扫描直接标注了 [ResetStatic] 的自动属性和事件。</summary>
+        /// <summary>
+        /// TypeCache 没有 GetProperties/EventsWithAttribute，手动扫描直接标注了 [ResetStatic] 的属性和事件。
+        /// 只有引用了特性所在程序集的程序集才可能使用该特性。
+        /// </summary>
         static void ScanPropertyAndEventAttributes(ResetPlan plan)
         {
+            var attributeAssembly = typeof(ResetStaticAttribute).Assembly;
+            var attributeAssemblyName = attributeAssembly.GetName().Name;
             foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
             {
                 if (asm.IsDynamic || ReflectionUtil.IsTestAssembly(asm)) continue;
-                foreach (var type in ReflectionUtil.SafeGetTypes(asm))
-                {
-                    foreach (var prop in type.GetProperties(ReflectionUtil.StaticMembers))
-                    {
-                        var attr = prop.GetCustomAttribute<ResetStaticAttribute>(false);
-                        if (attr != null) plan.AddAutoProperty(prop, attr.Mode, null);
-                    }
+                if (asm != attributeAssembly && !ReflectionUtil.References(asm, attributeAssemblyName)) continue;
+                foreach (var type in ReflectionUtil.SafeGetTypes(asm)) plan.AddMemberAttributes(type);
+            }
+        }
 
-                    foreach (var evt in type.GetEvents(ReflectionUtil.StaticMembers))
-                    {
-                        var attr = evt.GetCustomAttribute<ResetStaticAttribute>(false);
-                        if (attr != null) plan.AddEvent(evt, attr.Mode, null);
-                    }
-                }
+        /// <summary>登记类型上直接标注了 [ResetStatic] 的属性和事件；实例成员也收集，以便报告声明错误。</summary>
+        internal void AddMemberAttributes(Type type)
+        {
+            foreach (var prop in type.GetProperties(ReflectionUtil.DeclaredMembers))
+            {
+                var attr = prop.GetCustomAttribute<ResetStaticAttribute>(false);
+                if (attr != null) AddAutoProperty(prop, attr.Mode, null);
+            }
+
+            foreach (var evt in type.GetEvents(ReflectionUtil.DeclaredMembers))
+            {
+                var attr = evt.GetCustomAttribute<ResetStaticAttribute>(false);
+                if (attr != null) AddEvent(evt, attr.Mode, null);
             }
         }
 
@@ -82,6 +91,13 @@ namespace EasyReloadGuard.Editor
 
         internal void AddAutoProperty(PropertyInfo prop, ResetMode mode, string source)
         {
+            var accessor = prop.GetMethod ?? prop.SetMethod;
+            if (accessor != null && !accessor.IsStatic)
+            {
+                Findings.Add(Declaration(prop, source, ResetRules.InstanceStateError));
+                return;
+            }
+
             var backing = prop.DeclaringType.GetField(
                 $"<{prop.Name}>k__BackingField",
                 BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
@@ -100,6 +116,12 @@ namespace EasyReloadGuard.Editor
 
         internal void AddEvent(EventInfo evt, ResetMode mode, string source)
         {
+            if (evt.AddMethod != null && !evt.AddMethod.IsStatic)
+            {
+                Findings.Add(Declaration(evt, source, ResetRules.InstanceStateError));
+                return;
+            }
+
             var backing = evt.DeclaringType.GetField(evt.Name,
                 BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
             if (backing != null)
@@ -239,7 +261,7 @@ namespace EasyReloadGuard.Editor
             }
 
             var subject = ReflectionUtil.Subject(openField);
-            const string hint = "直接使用、未经派生类出现的闭合类型无法静态发现，需在首次赋值处调用 PlaySession.RegisterReset。";
+            const string hint = "直接使用、未经派生类出现的闭合类型无法静态发现，需在 Editor 适配器中按闭合类型用 ResetField 声明（不要在业务代码中插入登记）。";
             Findings.Add(count == 0
                 ? new Finding(RuleIds.GenericExpansion, Severity.Warning, subject, "泛型静态字段没有找到任何闭合构造，未生成重置步骤。" + hint)
                 : new Finding(RuleIds.GenericExpansion, Severity.Info, subject, $"泛型静态字段已展开 {count} 个由派生类型确定的闭合构造。" + hint));

@@ -1,67 +1,57 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Threading;
 using UnityEngine;
 
 namespace EasyReloadGuard
 {
     /// <summary>
-    /// Play 会话边界。每次进入 Play 生成新的 Id 与 Token；Editor 退出 Play、Player 退出应用时取消 Token。
-    /// 关闭 Domain Reload 时用它阻止上一会话的异步结果写入当前会话。
+    /// Editor 中关闭 Domain Reload 时的重置登记与重载请求入口。公开成员只有带 Conditional("UNITY_EDITOR") 的 void 命令，
+    /// Player 构建中调用点连同实参被编译器移除；会话编号、进入 Play 的钩子与登记表只存在于 Editor，
+    /// Player 中本类型没有状态、启动入口或退出订阅，不参与业务的取消、回写与释放。
     /// </summary>
-    [ReloadSafe("会话编号需要跨 Play 递增；令牌由 Begin/End 管理")]
+    [ReloadSafe("会话编号需要跨 Play 递增；重置登记由 owner 解除或随 owner 销毁移除；仅存在于 Editor")]
     public static class PlaySession
     {
-        static readonly object s_Lock = new object();
-        static int s_Id;
-        static bool s_Active;
-        static CancellationTokenSource s_Cts = CreateCancelledSource();
-
-        /// <summary>当前会话编号；尚未进入过 Play 时为 0。</summary>
-        public static int Id => s_Id;
-
-        /// <summary>是否处于 Play 会话中。</summary>
-        public static bool IsActive => s_Active;
-
-        /// <summary>当前会话的取消令牌；会话之外返回已取消的令牌。</summary>
-        public static CancellationToken Token => s_Cts.Token;
-
-        /// <summary>捕获当前会话，异步回写前用 <see cref="PlaySessionStamp.IsAlive"/> 判断是否仍属当前会话。</summary>
-        public static PlaySessionStamp Current => new PlaySessionStamp(s_Id);
-
         /// <summary>
         /// 登记一个在下次进入 Play 时执行的重置动作，执行后自动移除。
-        /// 用于泛型单例等无法用特性静态描述的状态。Player 构建中调用点被编译器移除。
+        /// 用于工程自有的 Editor 代码登记无法用特性静态描述的状态；业务代码优先使用已有成员上的特性或 Editor 适配器。
+        /// Player 构建中调用点被编译器移除。
         /// </summary>
         [Conditional("UNITY_EDITOR")]
         public static void RegisterReset(Action reset)
         {
 #if UNITY_EDITOR
-            if (reset == null) throw new ArgumentNullException(nameof(reset));
-            lock (s_Lock)
-            {
-                s_RegisteredResets.Add(reset);
-            }
+            Resets.Add(reset);
 #endif
         }
 
         /// <summary>
-        /// 登记一个在每次进入 Play 时重复执行的重置动作（执行后自动重新登记）。
-        /// 适合 ScriptableObject 等 OnEnable 只调用一次的对象。Player 构建中调用点被编译器移除。
+        /// 登记一个在每次进入 Play 时都执行的重置动作，直到 <see cref="UnregisterPersistentReset"/> 解除或 owner 被销毁。
+        /// 动作的目标（<see cref="Delegate.Target"/>）是 UnityEngine.Object 时以它为 owner，销毁或卸载后自动解除；
+        /// 同一目标与方法重复登记只保留一份；某次执行失败不影响登记。Player 构建中调用点被编译器移除。
         /// </summary>
         [Conditional("UNITY_EDITOR")]
         public static void RegisterPersistentReset(Action reset)
         {
 #if UNITY_EDITOR
-            if (reset == null) throw new ArgumentNullException(nameof(reset));
-            void ReRegister() => RegisterReset(() => { reset(); ReRegister(); });
-            ReRegister();
+            Resets.AddPersistent(reset);
 #endif
         }
 
         /// <summary>
-        /// 运行时检测到无法恢复的残留状态时调用：下次进入 Play 前强制重载域。Player 构建中调用点被移除。
+        /// 解除 <see cref="RegisterPersistentReset"/> 的登记（按目标与方法匹配）。Player 构建中调用点被编译器移除。
+        /// </summary>
+        [Conditional("UNITY_EDITOR")]
+        public static void UnregisterPersistentReset(Action reset)
+        {
+#if UNITY_EDITOR
+            Resets.RemovePersistent(reset);
+#endif
+        }
+
+        /// <summary>
+        /// 检测到无法恢复的残留状态时调用：下次进入 Play 前强制重载域。Player 构建中调用点被移除。
         /// </summary>
         [Conditional("UNITY_EDITOR")]
         public static void RequestDomainReload(string reason)
@@ -72,80 +62,85 @@ namespace EasyReloadGuard
 #endif
         }
 
-        internal static void Begin()
-        {
-            End(); // 上次退出未被观察到时，先结束旧会话
-            s_Id++;
-            s_Cts = new CancellationTokenSource();
-            s_Active = true;
-        }
-
-        internal static void End()
-        {
-            if (!s_Active) return;
-            s_Active = false;
-            // 不 Dispose：Token 在会话外仍需可读。取消回调的异常不能阻断后续会话切换
-            try
-            {
-                s_Cts.Cancel();
-            }
-            catch (Exception e)
-            {
-                UnityEngine.Debug.LogError("[Easy Reload Guard] PlaySession.Token 的取消回调抛出异常：");
-                UnityEngine.Debug.LogException(e);
-            }
-        }
-
-        static CancellationTokenSource CreateCancelledSource()
-        {
-            var source = new CancellationTokenSource();
-            source.Cancel();
-            return source;
-        }
-
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void OnSubsystemRegistration()
-        {
-            Begin();
 #if UNITY_EDITOR
-            EditorEnterPlayHook?.Invoke();
-#else
-            Application.quitting -= End;
-            Application.quitting += End;
-#endif
-        }
+        static int s_Id;
 
-#if UNITY_EDITOR
-        static readonly List<Action> s_RegisteredResets = new List<Action>();
+        /// <summary>当前 Play 会话编号，仅用于 Editor 日志；尚未进入过 Play 时为 0。</summary>
+        internal static int Id => s_Id;
+
+        /// <summary>RegisterReset / RegisterPersistentReset 的登记表，进入 Play 时由 Editor 取出执行。</summary>
+        internal static readonly ResetRegistry Resets = new ResetRegistry();
 
         /// <summary>由 Editor 程序集设置，进入 Play 的 SubsystemRegistration 阶段调用。</summary>
         internal static Action EditorEnterPlayHook;
 
         internal static string PendingReloadReason;
 
-        internal static List<Action> DrainRegisteredResets()
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void OnSubsystemRegistration()
         {
-            lock (s_Lock)
-            {
-                var drained = new List<Action>(s_RegisteredResets);
-                s_RegisteredResets.Clear();
-                return drained;
-            }
+            s_Id++;
+            EditorEnterPlayHook?.Invoke();
         }
 #endif
     }
 
-    /// <summary>某一 Play 会话的标记。</summary>
-    public readonly struct PlaySessionStamp
+#if UNITY_EDITOR
+    /// <summary>
+    /// 进入 Play 时执行的重置登记。一次性登记取出后即移除；持久登记一直保留，直到被解除或 owner 被销毁，
+    /// 某次执行成功与否不影响登记。
+    /// </summary>
+    internal sealed class ResetRegistry
     {
-        internal PlaySessionStamp(int id)
+        readonly object m_Lock = new object();
+        readonly List<Action> m_Once = new List<Action>();
+        readonly List<Action> m_Persistent = new List<Action>();
+
+        public int PersistentCount
         {
-            Id = id;
+            get
+            {
+                lock (m_Lock) return m_Persistent.Count;
+            }
         }
 
-        public int Id { get; }
+        public void Add(Action reset)
+        {
+            if (reset == null) throw new ArgumentNullException(nameof(reset));
+            lock (m_Lock) m_Once.Add(reset);
+        }
 
-        /// <summary>该会话仍是当前活跃会话。</summary>
-        public bool IsAlive => PlaySession.IsActive && PlaySession.Id == Id;
+        public void AddPersistent(Action reset)
+        {
+            if (reset == null) throw new ArgumentNullException(nameof(reset));
+            lock (m_Lock)
+            {
+                if (!m_Persistent.Contains(reset)) m_Persistent.Add(reset);
+            }
+        }
+
+        public void RemovePersistent(Action reset)
+        {
+            if (reset == null) throw new ArgumentNullException(nameof(reset));
+            lock (m_Lock) m_Persistent.Remove(reset);
+        }
+
+        /// <summary>取出本次进入 Play 要执行的动作：一次性登记（先进先出，随即移除）在前，持久登记在后。须在主线程调用。</summary>
+        public List<Action> TakeForEnter()
+        {
+            lock (m_Lock)
+            {
+                m_Persistent.RemoveAll(IsOwnerDestroyed);
+                var resets = new List<Action>(m_Once.Count + m_Persistent.Count);
+                resets.AddRange(m_Once);
+                resets.AddRange(m_Persistent);
+                m_Once.Clear();
+                return resets;
+            }
+        }
+
+        // 目标是已销毁或已卸载的 UnityEngine.Object 时（== null 但引用仍在），owner 生命周期已结束
+        static bool IsOwnerDestroyed(Action reset) => reset.Target is UnityEngine.Object owner && owner == null;
     }
+#endif
 }

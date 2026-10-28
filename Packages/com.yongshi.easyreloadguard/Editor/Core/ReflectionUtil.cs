@@ -11,6 +11,11 @@ namespace EasyReloadGuard.Editor
         public const BindingFlags StaticMembers =
             BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
 
+        /// <summary>本类型声明的静态与实例成员，用于发现标注在错误成员上的特性。</summary>
+        public const BindingFlags DeclaredMembers = StaticMembers | BindingFlags.Instance;
+
+        const string k_NUnit = "nunit.framework";
+
         static readonly Dictionary<Assembly, bool> s_TestAssemblies = new Dictionary<Assembly, bool>();
 
         public static string TypeName(Type type) => type.FullName ?? type.Name;
@@ -47,12 +52,12 @@ namespace EasyReloadGuard.Editor
             }
         }
 
-        /// <summary>测试程序集的夹具不参与项目的重置计划与检查。</summary>
+        /// <summary>测试程序集（含 NUnit 本身）的夹具不参与项目的重置计划与检查。</summary>
         public static bool IsTestAssembly(Assembly assembly)
         {
             if (!s_TestAssemblies.TryGetValue(assembly, out var result))
             {
-                result = assembly.GetReferencedAssemblies().Any(r => r.Name == "nunit.framework");
+                result = assembly.GetName().Name == k_NUnit || assembly.GetReferencedAssemblies().Any(r => r.Name == k_NUnit);
                 s_TestAssemblies[assembly] = result;
             }
 
@@ -67,6 +72,14 @@ namespace EasyReloadGuard.Editor
         public static bool IsBackingField(Type type, FieldInfo field) =>
             field.Name.EndsWith("k__BackingField", StringComparison.Ordinal) ||
             type.GetEvent(field.Name, StaticMembers) != null;
+
+        public static bool References(Assembly assembly, string name)
+        {
+            foreach (var reference in assembly.GetReferencedAssemblies())
+                if (reference.Name == name)
+                    return true;
+            return false;
+        }
 
         public static Assembly FindLoadedAssembly(string name)
         {

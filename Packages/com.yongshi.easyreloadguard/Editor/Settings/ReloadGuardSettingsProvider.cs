@@ -54,7 +54,7 @@ namespace EasyReloadGuard.Editor
             EditorGUILayout.PropertyField(m_Settings.FindProperty(nameof(ReloadGuardSettings.prePlayCheck)), new GUIContent("进入 Play 前检查"));
             EditorGUILayout.PropertyField(m_Settings.FindProperty(nameof(ReloadGuardSettings.reloadOnResetFailure)), new GUIContent("重置失败后强制重载"));
             EditorGUILayout.PropertyField(m_Settings.FindProperty(nameof(ReloadGuardSettings.verboseLog)), new GUIContent("详细日志"));
-            EditorGUILayout.PropertyField(m_Settings.FindProperty(nameof(ReloadGuardSettings.includedPackages)), new GUIContent("纳入检查的包"));
+            EditorGUILayout.PropertyField(m_Settings.FindProperty(nameof(ReloadGuardSettings.excludedPackages)), new GUIContent("排除的包"));
             EditorGUILayout.PropertyField(m_Settings.FindProperty(nameof(ReloadGuardSettings.excludedAssemblies)), new GUIContent("排除的程序集"));
             if (EditorGUI.EndChangeCheck())
             {

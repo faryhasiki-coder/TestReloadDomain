@@ -16,7 +16,7 @@
 
 | 用例 | 类型 | Domain Reload | Scene Reload | 期望 |
 | --- | --- | --- | --- | --- |
-| `Fix_GuardedStateIsResetEachSession`（Order 1） | 修复验证：`GuardedCaseCounter` | 关闭 | 开启 | 每轮计数/集合/事件订阅/外部处理器都是 1；`InitialValue` 字段恢复为 `initial`；上一会话的 Token 已取消、标记失效；退出后外部处理器残留为 0 |
+| `Fix_GuardedStateIsResetEachSession`（Order 1） | 修复验证：`GuardedCaseCounter` | 关闭 | 开启 | 每轮计数/集合/事件订阅/外部处理器都是 1；`InitialValue` 字段恢复为 `initial`；退出后外部处理器残留为 0 |
 | `Fix_UniTaskWorkEndsWithSession`（Order 2） | 修复验证：`GuardedUniTaskLoader` | 关闭 | 开启 | 见下方 UniTask 一节 |
 | `Repro_LeakyStateAccumulatesAcrossSessions`（Order 3） | 复现：`LeakyCaseCounter` | 关闭 | 开启 | 第 k 轮各项均为 k（逐轮累积） |
 | `Repro_UniTaskWorkLeaksAcrossSessions`（Order 4） | 复现：`LeakyUniTaskLoader` | 关闭 | 开启 | 见下方 UniTask 一节 |
@@ -32,23 +32,26 @@
 - 关闭 Domain Reload 时，`Init`（AfterAssembliesLoaded）每次进入 Play 都会重建 runner 和 continuation 队列；`EnteredEditMode`/`ExitingEditMode` 时，先执行一次旧队列，再清空。
 - 因此，只依赖 PlayerLoop 的等待不会被带进下一个会话，但被丢弃的状态机不会继续执行，其中的 `finally` 永远不会运行。
 - 线程池工作如果跨会话才完成，`RunOnThreadPool` 在 finally 中调用 `UniTask.Yield()`，经 `AddContinuation` 进入的是**当前**静态队列，也就是新会话的队列，于是旧结果被写入新会话。
-- `InsertRunner` 每次初始化都会向 `EditorApplication.playModeStateChanged` 追加一个闭包（每个 timing 一个），而且从不移除。关闭 Domain Reload 时，这些闭包逐轮累积，每个都持有已清空的旧 runner 和队列。这是 UniTask 自身的残留，内置 `UniTaskAdapter` 的 `SelfHandled` 依据没有覆盖到这一点。本工程只记录这一现象，不修复。
+- `InsertRunner` 每次初始化都会向 `EditorApplication.playModeStateChanged` 追加一个闭包（每个 timing 一个），而且从不移除。关闭 Domain Reload 时，这些闭包逐轮累积，每个都持有已清空的旧 runner 和队列。这是 UniTask 自身的残留。Easy Reload Guard 0.2.0 起不再内置把 UniTask 整包声明为已处理的适配器；本工程用临时项目适配器 `Assets/ReloadGuardProjectAdapters`（`UniTaskEditorCallbackAdapter`）在进入 Play 的重置阶段反射移除上一次初始化留下的处理器，正式落地改为在 UniTask 源码中修复。
 
-| 写法 | 复现：`LeakyUniTaskLoader`（不传令牌） | 修复：`GuardedUniTaskLoader`（owner 为 Play 会话） |
+| 写法 | 复现：`LeakyUniTaskLoader`（不传令牌） | 修复：`GuardedUniTaskLoader`（owner 为加载器自己的取消源） |
 | --- | --- | --- |
-| 线程池加载后回写 | `await UniTask.RunOnThreadPool(work)` 后直接写结果 | 把 `PlaySession.Token` 传给工作本身和 `RunOnThreadPool`，回写前再判断 `PlaySessionStamp.IsAlive` |
-| 占用资源，在 finally 中释放 | `await UniTask.Delay(duration)` | `UniTask.Delay(..., PlaySession.Token, cancelImmediately: true)`；退出 Play 时同步结束，执行 finally |
-| 资源计数 | 未处理（RG003，已入基线） | `[ReloadSafe]`：计数由 finally 成对维护，重置反而会掩盖未释放的资源 |
+| 线程池加载后回写 | `await UniTask.RunOnThreadPool(work)` 后直接写结果 | 把加载器取消源的令牌传给工作本身和 `RunOnThreadPool`，回写前再判断该令牌未取消 |
+| 占用资源，在 finally 中释放 | `await UniTask.Delay(duration)` | `UniTask.Delay(..., token, cancelImmediately: true)`；取消时同步结束，执行 finally |
+| 取消时机 | 无 | 业务方法 `CancelAll`（取消旧源、换新源）标注 `[OnExitPlayMode]`，Editor 退出 Play 时调用；Player 中由业务自行决定是否调用，工具包不参与 |
+| 资源计数、取消源 | 未处理（RG003，已入基线） | `[ReloadSafe]`：计数由 finally 成对维护、取消源由 `CancelAll` 换新，重置反而会掩盖未释放的资源或丢失在途任务 |
 
 后台工作阻塞在测试持有的闸门（`ManualResetEventSlim`）上，用来模拟慢速 IO，完成时机由测试决定。资源占用使用 10 分钟的 Delay，测试期间不会自然结束。期望如下：
 
-- 修复（Order 2）：每轮在会话内完成一次加载，`completedLoads=1`；再启动一个阻塞的加载和一份资源占用后退出。退出后 `heldResources=0`，阻塞的工作随令牌取消结束（`blockedWorkers=0`），下一轮开始时没有旧结果写入。
-- 复现（Order 4）：第 k 轮开始时，上一轮的工作仍阻塞在线程池中；放开闸门后，上一轮的加载写入第 k 个会话。`heldResources` 逐轮为 k；UniTask 的 `playModeStateChanged` 处理器逐轮增加同样的数量。
+- 修复（Order 2）：每轮在会话内完成一次加载，`completedLoads=1`；再启动一个阻塞的加载和一份资源占用后退出。退出后 `heldResources=0`，阻塞的工作随 `CancelAll` 结束（`blockedWorkers=0`），下一轮开始时没有旧结果写入。
+- 复现（Order 4）：第 k 轮开始时，上一轮的工作仍阻塞在线程池中；放开闸门后，上一轮的加载写入第 k 个会话。`heldResources` 逐轮为 k。UniTask 的 `playModeStateChanged` 处理器数量保持不变（由临时项目适配器移除上一组）。
 - 对照（Order 6）：每轮 `heldResources=1`，UniTask 处理器数量每轮相同（finally 同样没有执行，只是残留随旧域一起被丢弃）。后台工作阻塞的线程会跨域重载，可能拖住卸载，所以对照组不启动后台工作。
 - 处理器统计使用 Unity 6000.3 的内部结构（不限定小版本） `EditorApplication.m_PlayModeStateChangedEvent.m_Delegate`（`length` / `GetDelegateAt`）。读取失败时测试会直接失败并提示复核，不会静默跳过。
 - 每个用例结束时（TearDown）放开闸门，并等待后台工作退出，避免阻塞的线程留到后续用例或域重载中。
 
 **验证状态：未验证。** 截至 2026-10-22 只做了静态检查，尚未编译，也尚未运行 Test Runner 或人工连续 Play→Stop。
+
+**2026-10-27 改动（未验证）**：依据第 03 轮双模型审查（工具包运行时隔离），工具包不再提供会话令牌与会话标记。修复组改为由 `GuardedUniTaskLoader` 自己的取消源管理任务，`GuardedCaseCounter` 去掉令牌/标记字段，测试日志不再输出会话号。改动后尚未编译、未运行 Test Runner 或 PSP；下文历史结果来自改动前的代码。
 
 ## 实际结果（2026-10-22，批处理流水线，CI 镜像工程）
 

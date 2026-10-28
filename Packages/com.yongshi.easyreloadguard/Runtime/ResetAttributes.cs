@@ -48,7 +48,7 @@ namespace EasyReloadGuard
 
     /// <summary>
     /// 退出 Play（ExitingPlayMode）时调用的静态无参 void 方法，用于解除订阅、停止线程/计时器、释放外部资源。
-    /// 在 <see cref="PlaySession.Token"/> 取消之后按 Order 升序执行；无论 Domain Reload 是否关闭都会执行。
+    /// 按 Order 升序执行；无论 Domain Reload 是否关闭都会执行。优先标注业务已有、语义适用的停止/释放方法，不要为此新建方法。
     /// </summary>
     [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
     public sealed class OnExitPlayModeAttribute : Attribute

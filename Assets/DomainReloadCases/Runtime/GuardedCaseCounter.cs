@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Threading;
 using EasyReloadGuard;
 using UnityEngine;
 
@@ -16,8 +15,6 @@ namespace DomainReloadCases
         [ResetStatic(ResetMode.Clear)] public static readonly List<GuardedCaseCounter> Instances = new List<GuardedCaseCounter>();
         [ResetStatic(ResetMode.InitialValue)] public static string Label = "initial";
         [ResetStatic] public static int LogCallbackCount;
-        [ResetStatic] public static CancellationToken LastToken;
-        [ResetStatic] public static PlaySessionStamp LastStamp;
         [ResetStatic] static bool s_LogSubscribed;
 
         [field: ResetStatic]
@@ -30,8 +27,6 @@ namespace DomainReloadCases
             CreatedCount++;
             Instances.Add(this);
             Ticked += OnTicked;
-            LastToken = PlaySession.Token;
-            LastStamp = PlaySession.Current;
             if (s_LogSubscribed) return;
             Application.logMessageReceived += OnLog;
             s_LogSubscribed = true;

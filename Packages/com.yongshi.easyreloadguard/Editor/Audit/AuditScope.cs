@@ -1,14 +1,16 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using UnityEditor;
 using UnityEditor.Compilation;
 using Assembly = System.Reflection.Assembly;
 
 namespace EasyReloadGuard.Editor
 {
     /// <summary>
-    /// 检查范围：Assets 下的 Player 程序集与预编译 DLL；包内程序集需在设置中显式纳入。
-    /// 适配器声明 SelfHandled 的包/程序集与设置中排除的程序集不扫描。
+    /// 检查范围：Assets 与全部包（嵌入式、注册表缓存）中的 Player 程序集，以及对当前 Player 平台可用的预编译 DLL。
+    /// 仅编辑器可用的 DLL（版本管理、IDE、IL 处理等工具库）不参与 Play 运行逻辑，不扫描；
+    /// 设置中排除的包/程序集、适配器声明 SelfHandled 的包/程序集也不扫描。
     /// </summary>
     internal static class AuditScope
     {
@@ -22,9 +24,11 @@ namespace EasyReloadGuard.Editor
                 Consider(assembly.name, package);
             }
 
+            var playerPlugins = PlayerPluginPaths();
             foreach (var path in CompilationPipeline.GetPrecompiledAssemblyPaths(
                          CompilationPipeline.PrecompiledAssemblySources.UserAssembly))
             {
+                if (!playerPlugins.Contains(FullPath(path))) continue;
                 var relative = ToProjectRelative(path);
                 var package = PackageNameFromPath(relative);
                 if (package != null || relative.StartsWith("Assets/", StringComparison.Ordinal))
@@ -35,7 +39,7 @@ namespace EasyReloadGuard.Editor
             foreach (var name in wanted)
             {
                 var loaded = ReflectionUtil.FindLoadedAssembly(name);
-                if (loaded == null) continue;
+                if (loaded == null || ReflectionUtil.IsTestAssembly(loaded)) continue;
                 result.Add(loaded);
                 report.ScannedAssemblies.Add(name);
             }
@@ -45,7 +49,7 @@ namespace EasyReloadGuard.Editor
             void Consider(string name, string package)
             {
                 if (settings.excludedAssemblies.Contains(name)) return;
-                if (package != null && !settings.includedPackages.Contains(package)) return;
+                if (package != null && settings.excludedPackages.Contains(package)) return;
                 if (plan.IsSelfHandled(name) || (package != null && plan.IsSelfHandled(package)))
                 {
                     if (!report.SelfHandledAssemblies.Contains(name)) report.SelfHandledAssemblies.Add(name);
@@ -70,6 +74,20 @@ namespace EasyReloadGuard.Editor
             var end = rest.IndexOfAny(new[] { '@', '/' });
             return end > 0 ? rest.Substring(0, end) : null;
         }
+
+        /// <summary>对当前构建目标可用的托管插件（物理路径）。</summary>
+        static HashSet<string> PlayerPluginPaths()
+        {
+            var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var importer in PluginImporter.GetImporters(EditorUserBuildSettings.activeBuildTarget))
+            {
+                if (!importer.isNativePlugin) paths.Add(FullPath(FileUtil.GetPhysicalPath(importer.assetPath)));
+            }
+
+            return paths;
+        }
+
+        static string FullPath(string path) => Path.GetFullPath(path).Replace('\\', '/');
 
         const string k_Packages = "Packages/";
         const string k_PackageCache = "Library/PackageCache/";

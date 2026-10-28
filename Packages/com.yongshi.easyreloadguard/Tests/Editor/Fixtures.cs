@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using UnityEditor;
 using UnityEngine;
@@ -57,6 +58,16 @@ namespace EasyReloadGuard.Editor.Tests
         public void Reset() => Value = 0;
     }
 
+    /// <summary>[ResetStatic] 误用在实例属性/事件上，生产发现入口应报告 RG010。</summary>
+    sealed class InstanceAttributeFixture
+    {
+        [ResetStatic] public int Count { get; set; }
+
+#pragma warning disable CS0067
+        [ResetStatic] public event Action Changed;
+#pragma warning restore CS0067
+    }
+
     class GenericHolder<T>
     {
         public static T Value;
@@ -85,6 +96,14 @@ namespace EasyReloadGuard.Editor.Tests
         public static int MissingReason;
 
         public static int AutoProperty { get; set; }
+
+        public static CancellationTokenSource Cancellation;
+        public static Task Pending;
+        public static readonly Timer Ticker = null;
+
+        public static async void FireAndForget() => await Task.Yield();
+
+        public static async Task ReturnsTask() => await Task.Yield();
     }
 
     [ReloadSafe("测试：整体安全")]
@@ -136,6 +155,16 @@ namespace EasyReloadGuard.Editor.Tests
             builder.ResetField("EasyReloadGuard.Editor.Tests.DoesNotExist, EasyReloadGuard.Editor.Tests", "Value");
             builder.ResetField(FixtureType, "Missing");
             builder.SelfHandled(" ");
+        }
+    }
+
+    sealed class KnownIssueAdapter : TestAdapterBase
+    {
+        public override void Configure(ReloadAdapterBuilder builder)
+        {
+            builder.SelfHandled("测试依据");
+            builder.KnownIssue(FixtureType, nameof(ResetFixture.Counter), "测试：已知会影响运行逻辑的静态字段");
+            builder.KnownIssue(FixtureType, "Missing", "测试：成员不存在");
         }
     }
 

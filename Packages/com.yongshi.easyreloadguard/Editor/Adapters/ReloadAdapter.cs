@@ -93,6 +93,26 @@ namespace EasyReloadGuard.Editor
         }
 
         /// <summary>
+        /// 登记目标中经复核会影响关闭 Domain Reload 后运行逻辑的静态成员，报告为 RG023 警告（可写入基线）。
+        /// 与 <see cref="SelfHandled"/> 搭配：整包其余状态已复核为不影响运行逻辑，这些例外仍需使用方知晓或处理。
+        /// </summary>
+        public void KnownIssue(string typeName, string memberName, string issue)
+        {
+            if (!RequireText(issue, nameof(KnownIssue))) return;
+            var type = Resolve(typeName);
+            if (type == null) return;
+            var members = type.GetMember(memberName, ReflectionUtil.StaticMembers);
+            if (members.Length == 0)
+            {
+                Broken($"类型 {typeName} 中找不到静态成员 {memberName}");
+                return;
+            }
+
+            m_Plan.Findings.Add(new Finding(RuleIds.AdapterKnownIssue, Severity.Warning, ReflectionUtil.Subject(members[0]),
+                $"[{Source}] {issue}", baselinable: true));
+        }
+
+        /// <summary>
         /// 目标的静态状态无法安全重置时的兜底：关闭 Domain Reload 时，每次进入 Play 前强制重载域。
         /// </summary>
         public void RequireDomainReload(string reason)
