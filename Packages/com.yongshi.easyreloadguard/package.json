@@ -1,6 +1,6 @@
 {
   "name": "com.yongshi.easyreloadguard",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "displayName": "Easy Reload Guard",
   "description": "关闭 Domain Reload 时的静态状态重置、退出释放、第三方包/DLL 与业务程序集的 Editor 适配、离线检查与强制重载工具包（Player 中不参与业务逻辑）。",
   "unity": "6000.3",

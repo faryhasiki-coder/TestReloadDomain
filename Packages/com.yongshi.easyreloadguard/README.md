@@ -9,6 +9,8 @@
 - **Player 中没有开销**：Player 每次启动都是新的域，重置引擎只在 Editor 关闭 Domain Reload 时执行。
 - **方案统一**：新代码和旧代码都使用同一套特性；第三方代码使用适配器；实在无法处理时强制重载兜底。
 
+> 0.3.1（2026-10-30）：残留探测读取 Unity 6 的 `EventWithPerformanceTracker` 事件容器（Origins PSP 发现 `playModeStateChanged` 漏读）；静态构造为纯初始化的类型默认读取，不再整体跳过（Origins 三轮每轮跳过 4,220 个字段）。6000.3.1f1 batchmode：`EasyReloadGuard.Editor.Tests` 53/53 通过。尚未在用户编辑器中重做 PSP。
+>
 > 0.3.0 接入能力（2026-10-29）：检查器读取方法体 IL（只读，限声明类型内），每条报告附“上下文”（初值、赋值与内容修改位置、分析范围），建议按上下文给出；报告开头新增按来源 → 程序集 → 类型分组的工作清单；新增 RG013（已声明的重置会破坏下一会话）与 RG014（`[ResetMethod]` 没有覆盖类型内的可变字段）；私有且只在类型初始化时写入的字段/目录降为提示。允许业务新增 Editor-only 重置方法。新增退出 Play 后的残留探测（`Library/EasyReloadGuard/ResidueReport.md`）。新增[接入手册](Documentation~/接入手册.md)。6000.3.1f1 batchmode 验证：编译通过，EditMode 63 项中 62 通过，`EasyReloadGuard.Editor.Tests` 全部通过（新增 9 项）；唯一失败为既有的 MATH-02 全量顺序问题，单独运行通过。**残留探测尚未在用户编辑器中做 PSP 实测。**
 >
 > 0.2.0 异步规范调整（2026-10-28）：异步生命周期改由业务负责，移除 2026-10-27 短暂加入的 `IAsyncReloadHandler` / `AsyncHandler` 及工程侧样例原型，新增检查规则 RG005/RG006；同日清除接入样例的接入代码，样例恢复接入前形态。2026-10-28 经 Unity Pipeline 在 6000.3.1f1 下验证：编译通过，`EasyReloadGuard.Editor.Tests` **40/40 通过**（含新增异步规则测试）；检查为错误 0、警告 10、提示 1、已基线 8，阻断 0。较 10-27 新增的 3 条警告为 RG005 `AutoSaveService.Loop` 与恢复报告的两条样例 RG023（`AutoSaveService.s_Running`、`ProfileLoader.CurrentProfile`），RG006 未命中（该检查在清除样例接入代码之前运行）。**未运行 PSP 与接入验收。**
@@ -140,9 +142,9 @@ public static class ProfileLoader
 关闭 Domain Reload 时，每次退出 Play、回到编辑模式后，探测结果写入 `Library/EasyReloadGuard/ResidueReport.md`，发现残留时在 Console 输出 `[Easy Reload Guard]` 警告。它补足元数据与 IL 检查看不到的运行时行为，做 PSP 时可直接定位 owner：
 
 - **已销毁对象的引用**：静态字段、集合元素或回调目标仍指向上一会话已销毁的 `UnityEngine.Object`。
-- **跨会话增长**：同一回调方法在引擎/编辑器静态事件（`EditorApplication`、`SceneManager`、`Application`、`Camera`、`Canvas`、`RenderPipelineManager` 等）或项目委托中的数量逐次增加，或集合元素逐次增加。从本域第 2 次回到编辑模式开始比较。
+- **跨会话增长**：同一回调方法在引擎/编辑器静态事件（`EditorApplication`、`SceneManager`、`Application`、`Camera`、`Canvas`、`RenderPipelineManager` 等）或项目委托中的数量逐次增加，或集合元素逐次增加。从本域第 2 次回到编辑模式开始比较。Unity 6 中以 `EventWithPerformanceTracker<T>` 容器保存的编辑器事件（如 `playModeStateChanged`、`quitting`、`hierarchyChanged`）直接读取容器字段，不调用其枚举器；容器结构与当前版本不符时计为“无法读取”。
 - 项目字段取自最近一次检查报告中未处理（含已基线）的字段；本域没有运行过检查时只探测引擎回调。
-- 读取静态字段会触发尚未执行的静态构造，因此默认跳过有静态构造的项目类型，跳过数量写在报告中；设置“残留探测读取有静态构造的类型”可放开（可能在编辑模式执行本次 Play 没用到的类型的静态构造）。
+- 读取静态字段会触发尚未执行的静态构造。静态构造经只读 IL 判定为**纯初始化**（只创建 BCL 集合/字符串/值类型、写本类型字段、调用本类型内同样纯的方法或 lambda 缓存）的类型照常读取；其余有静态构造的项目类型默认跳过，报告分别列出“跳过”（静态构造可能有副作用）与“无法读取”的数量。设置“残留探测读取有静态构造的类型”可放开（可能在编辑模式执行本次 Play 没用到的类型的静态构造）。
 - 设置“退出 Play 后探测残留”可关闭本功能。
 
 ## 4. 第三方 UPM 包
@@ -257,7 +259,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File Tools/UnityCI/Run-UnityTests
 - 检查读取反射元数据与声明类型内的方法体 IL（只读，不执行、不改写）。类型外对非私有字段的写入、经局部变量转手或参数中夹杂同类型调用的集合修改、反射写入都不在分析范围内；上下文中“范围”一项标明结论是否完整。
 - 检查无法判断 `await` 之后写入的状态是否已失效、lambda 形式的 `async void`、`ConfigureAwait(false)` 后在线程池上的写入；这些依靠业务按“异步与后台工作”的规范处理，并以 PSP 与残留探测验证。
 - 检查无法识别“静态构造中订阅了外部事件”这类行为。这类订阅需要由 owner 已有的释放入口（标注 `[OnExitPlayMode]`）或 Editor 适配器解除；连续 Play 时残留探测会把订阅的逐次增长报告出来。
-- 残留探测默认跳过有静态构造的项目类型（大多数带初值的集合都在其中），只读字段值，不分析引用链；“未发现残留”不等于没有残留。
+- 残留探测默认跳过静态构造不纯的项目类型（调用 UnityEngine、业务代码或读取其他类型静态字段的初始化都按不纯处理），只读字段值，不分析引用链；“未发现残留”不等于没有残留。
 - 关闭 Scene Reload 带来的问题（对象不重建）不在本包范围内。
 - UniTask 2.5.11：`PlayerLoopHelper.InsertRunner` 每次初始化都向 `EditorApplication.playModeStateChanged` 追加一组匿名处理器（每个 timing 一个，共 16 个）且从不移除，关闭 Domain Reload 时每次进入 Play 累积一组，旧处理器持有旧 runner 和队列。本包不内置 UniTask 适配器：检查器看不到挂在 UnityEditor 事件上的订阅，也不能把它声明为整包已处理。应在 UniTask 源码中修复（内部托管版本）；测试工程中的临时做法见 `Assets/ReloadGuardProjectAdapters`。
 - 测试程序集（引用 nunit）中的特性和适配器不会进入项目的重置计划和检查。

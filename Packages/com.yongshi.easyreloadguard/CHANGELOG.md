@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.1] - 2026-10-30
+
+依据 Origins 首次 PSP 基线（0.3.0）暴露的残留探测盲区：
+
+- 读取 Unity 6 编辑器事件的 `EventWithPerformanceTracker<T>` 容器（`m_Delegate` → `m_DelegateOrList.Reference`，单个委托或 `Entry[]`），覆盖 `EditorApplication.playModeStateChanged`、`quitting`、`hierarchyChanged` 等此前漏读的事件。只读字段，不调用会创建性能追踪器的枚举器；结构读取集中在 `EditorCompat`，不符时计为“无法读取”。
+- 新增 `InitializerPurity`：只读 IL 判定静态构造是否为纯初始化（BCL 集合/字符串/值类型构造、写本类型字段、本类型内纯方法与 lambda 缓存；UnityEngine、业务代码、IO/线程/环境 API、读写其他类型静态字段一律不纯）。纯初始化的类型默认读取，设置“残留探测读取有静态构造的类型”只影响不纯的类型。
+- 报告与 Console 分别统计“跳过（静态构造可能有副作用）”与“无法读取”。
+- 6000.3.1f1 batchmode：编译通过，`EasyReloadGuard.Editor.Tests` 53/53 通过（新增纯初始化判定、事件容器读取等 4 项）。尚未在用户编辑器中重做 PSP，Origins 中实际可读字段数待下次 PSP 确认。
+
 ## [0.3.0] - 2026-10-29
 
 接入能力改进：检查报告从“违规清单”改为可直接决策的工作清单，接入边界改为可判定，新增运行时残留证据。

@@ -104,16 +104,7 @@ namespace EasyReloadGuard.Editor
 
         static void ScanMethod(Type owner, MethodBase method, TypeAccess access)
         {
-            byte[] il;
-            try
-            {
-                il = method.GetMethodBody()?.GetILAsByteArray();
-            }
-            catch (Exception)
-            {
-                return; // 无方法体（extern、抽象）或运行时拒绝读取
-            }
-
+            var il = ReadIL(method);
             if (il == null || il.Length == 0) return;
 
             var module = method.Module;
@@ -129,24 +120,9 @@ namespace EasyReloadGuard.Editor
             FieldInfo pending = null; // 最近一次读取、尚未被同类型调用消费的字段
             var initializerFill = false; // 类型初始化中，new 出的集合在赋给字段前已被填充（集合初始化器）
 
-            EnsureOpCodes();
             for (var pos = 0; pos < il.Length;)
             {
-                var code = il[pos++];
-                OpCode op;
-                if (code == 0xFE)
-                {
-                    if (pos >= il.Length) break;
-                    op = s_TwoByte[il[pos++]];
-                }
-                else
-                {
-                    op = s_OneByte[code];
-                }
-
-                if (op.Size == 0) break; // 未知字节：无法确定操作数长度，停止分析该方法
-                var operandStart = pos;
-                pos += OperandSize(op, il, pos);
+                if (!TryDecode(il, ref pos, out var op, out var operandStart)) break; // 未知字节：停止分析该方法
 
                 if (op == OpCodes.Stsfld || op == OpCodes.Ldsflda || op == OpCodes.Ldsfld)
                 {
@@ -278,6 +254,42 @@ namespace EasyReloadGuard.Editor
             catch (Exception)
             {
                 return null; // 引用了未加载的程序集或无法解析的泛型上下文
+            }
+        }
+
+        /// <summary>解码 pos 处的一条指令，pos 前进到下一条；遇到未知字节返回 false（无法确定操作数长度）。</summary>
+        internal static bool TryDecode(byte[] il, ref int pos, out OpCode op, out int operandStart)
+        {
+            EnsureOpCodes();
+            op = default;
+            operandStart = pos;
+            var code = il[pos++];
+            if (code == 0xFE)
+            {
+                if (pos >= il.Length) return false;
+                op = s_TwoByte[il[pos++]];
+            }
+            else
+            {
+                op = s_OneByte[code];
+            }
+
+            if (op.Size == 0) return false;
+            operandStart = pos;
+            pos += OperandSize(op, il, pos);
+            return pos <= il.Length;
+        }
+
+        /// <summary>读取方法体 IL；无方法体（extern、抽象）或运行时拒绝读取时返回 null。</summary>
+        internal static byte[] ReadIL(MethodBase method)
+        {
+            try
+            {
+                return method.GetMethodBody()?.GetILAsByteArray();
+            }
+            catch (Exception)
+            {
+                return null;
             }
         }
 

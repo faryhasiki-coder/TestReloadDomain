@@ -18,7 +18,8 @@ namespace EasyReloadGuard.Editor
     /// 退出 Play、回到编辑模式后的残留探测（仅关闭 Domain Reload 时）。读取引擎/编辑器的静态回调列表，以及最近一次检查报告中
     /// 未处理的静态字段，报告指向已销毁对象的引用与回调，以及跨会话持续增长的订阅和集合。做 Play → Stop → Play 时可直接定位 owner，
     /// 补足元数据检查看不到的运行时行为（如挂在 UnityEditor 事件上的订阅）。
-    /// 读取静态字段会触发尚未执行的静态构造，因此默认跳过有静态构造的项目类型（设置“残留探测读取有静态构造的类型”可放开）。
+    /// 读取静态字段会触发尚未执行的静态构造：静态构造经 IL 判定为纯初始化（<see cref="InitializerPurity"/>）的类型照常读取，
+    /// 其余有静态构造的项目类型默认跳过（设置“残留探测读取有静态构造的类型”可放开）。
     /// </summary>
     internal static class ResidueProbe
     {
@@ -73,7 +74,8 @@ namespace EasyReloadGuard.Editor
 
             if (result.Count == 0)
             {
-                Log.Verbose($"残留探测（本域第 {s_Returns} 次回到编辑模式）：未发现残留。读取 {current.Read} 个字段，跳过 {current.Skipped} 个。");
+                Log.Verbose($"残留探测（本域第 {s_Returns} 次回到编辑模式）：未发现残留。读取 {current.Read} 个字段，" +
+                            $"跳过 {current.Skipped} 个（静态构造可能有副作用），无法读取 {current.Unreadable} 个。");
                 return;
             }
 
@@ -84,7 +86,7 @@ namespace EasyReloadGuard.Editor
 
         static IEnumerable<FieldInfo> EngineCallbackFields() =>
             k_EngineTypes.SelectMany(t => t.GetFields(ReflectionUtil.StaticMembers))
-                .Where(f => typeof(Delegate).IsAssignableFrom(f.FieldType));
+                .Where(f => typeof(Delegate).IsAssignableFrom(f.FieldType) || EditorCompat.IsTrackedEventType(f.FieldType));
 
         /// <summary>检查报告中未处理（含已基线）的静态字段；已声明重置的字段每次进入 Play 都会恢复，不在探测范围内。</summary>
         static IEnumerable<FieldInfo> ProjectFields(AuditReport audit) =>
@@ -128,7 +130,7 @@ namespace EasyReloadGuard.Editor
             sb.AppendLine($"- Enter Play Mode：{EditorCompat.DescribePlayModeOptions()}");
             sb.AppendLine($"- 本域第 {s_Returns} 次回到编辑模式（会话 #{PlaySession.Id}）" +
                           (first ? "；首次只检查已销毁对象，增长从第 2 次开始比较" : string.Empty));
-            sb.AppendLine($"- 读取字段 {snapshot.Read} 个，跳过 {snapshot.Skipped} 个（有静态构造或无法读取）" +
+            sb.AppendLine($"- 读取字段 {snapshot.Read} 个，跳过 {snapshot.Skipped} 个（静态构造可能有副作用），无法读取 {snapshot.Unreadable} 个" +
                           (hasAudit ? string.Empty : "；本域尚未运行检查，只探测了引擎回调，运行检查后可探测项目静态字段"));
             AppendSection(sb, "已销毁对象的引用", result.Destroyed);
             AppendSection(sb, "跨会话增长", result.Growth);
@@ -162,9 +164,16 @@ namespace EasyReloadGuard.Editor
         public readonly List<string> Destroyed = new List<string>();
 
         public int Read { get; private set; }
+
+        /// <summary>静态构造不是纯初始化、为避免副作用而未读取的字段。</summary>
         public int Skipped { get; private set; }
 
-        /// <summary>engineFields 总是读取；projectFields 中有静态构造的类型只在 readTypeInitializers 为 true 时读取。</summary>
+        /// <summary>读取失败（含泛型定义上的字段、读取时抛出异常、无法解析的事件容器）的字段。</summary>
+        public int Unreadable { get; private set; }
+
+        /// <summary>
+        /// engineFields 总是读取；projectFields 中静态构造不纯的类型只在 readTypeInitializers 为 true 时读取。
+        /// </summary>
         public static ResidueSnapshot Capture(IEnumerable<FieldInfo> engineFields, IEnumerable<FieldInfo> projectFields, bool readTypeInitializers)
         {
             var snapshot = new ResidueSnapshot();
@@ -177,7 +186,13 @@ namespace EasyReloadGuard.Editor
             {
                 if (!seen.Add(field)) continue;
                 var type = field.DeclaringType;
-                if (type == null || type.ContainsGenericParameters || (!readTypeInitializers && type.TypeInitializer != null))
+                if (type == null || type.ContainsGenericParameters)
+                {
+                    snapshot.Unreadable++;
+                    continue;
+                }
+
+                if (!readTypeInitializers && !InitializerPurity.IsPure(type))
                 {
                     snapshot.Skipped++;
                     continue;
@@ -192,18 +207,26 @@ namespace EasyReloadGuard.Editor
         void Probe(FieldInfo field)
         {
             object value;
+            Delegate[] tracked = null;
             try
             {
                 value = field.GetValue(null);
+                if (value != null && EditorCompat.IsTrackedEventType(value.GetType()))
+                {
+                    tracked = EditorCompat.ReadTrackedEvent(value);
+                    if (tracked == null) throw new NotSupportedException("事件容器结构与当前 Unity 版本不符");
+                }
             }
             catch (Exception)
             {
-                Skipped++;
+                Unreadable++;
                 return;
             }
 
             Read++;
-            Inspect(ReflectionUtil.Describe(field), value);
+            var label = ReflectionUtil.Describe(field);
+            if (tracked != null) InspectCallbacks(label, tracked);
+            else Inspect(label, value);
         }
 
         void Inspect(string label, object value)
@@ -214,15 +237,7 @@ namespace EasyReloadGuard.Editor
                 case string _:
                     return;
                 case Delegate callback:
-                    var counts = new Dictionary<string, int>(StringComparer.Ordinal);
-                    foreach (var item in callback.GetInvocationList())
-                    {
-                        var method = $"{item.Method.DeclaringType?.FullName}.{item.Method.Name}";
-                        counts[method] = counts.TryGetValue(method, out var count) ? count + 1 : 1;
-                        if (IsDestroyed(item.Target)) Destroyed.Add($"{label} 的回调 {method} 的目标已销毁");
-                    }
-
-                    Callbacks[label] = counts;
+                    InspectCallbacks(label, callback.GetInvocationList());
                     return;
                 case UnityEngine.Object unityObject:
                     if (unityObject == null) Destroyed.Add($"{label} 指向已销毁的 {unityObject.GetType().Name}");
@@ -231,6 +246,19 @@ namespace EasyReloadGuard.Editor
                     InspectCollection(label, value, items);
                     return;
             }
+        }
+
+        void InspectCallbacks(string label, Delegate[] callbacks)
+        {
+            var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (var item in callbacks)
+            {
+                var method = $"{item.Method.DeclaringType?.FullName}.{item.Method.Name}";
+                counts[method] = counts.TryGetValue(method, out var count) ? count + 1 : 1;
+                if (IsDestroyed(item.Target)) Destroyed.Add($"{label} 的回调 {method} 的目标已销毁");
+            }
+
+            Callbacks[label] = counts;
         }
 
         void InspectCollection(string label, object value, IEnumerable items)

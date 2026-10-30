@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using UnityEditor;
 
 namespace EasyReloadGuard.Editor
@@ -48,5 +49,47 @@ namespace EasyReloadGuard.Editor
                 versions[package.name] = package.version;
             return versions;
         }
+
+        const BindingFlags k_Instance = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+
+        /// <summary>
+        /// Unity 6 的部分编辑器事件（如 EditorApplication.playModeStateChanged、quitting、hierarchyChanged）不是委托字段，
+        /// 而是 internal 结构 EventWithPerformanceTracker&lt;T&gt;。
+        /// </summary>
+        public static bool IsTrackedEventType(Type type) =>
+            type.IsValueType && type.IsGenericType && type.Name.StartsWith("EventWithPerformanceTracker`", StringComparison.Ordinal);
+
+        /// <summary>
+        /// 读取 EventWithPerformanceTracker&lt;T&gt; 的订阅：m_Delegate（类）→ m_DelegateOrList（Entry 结构）→ Reference，
+        /// 值为单个委托或 Entry[]。只读字段，不调用其枚举器（枚举会创建并启动性能追踪器）。结构与 6000.3 不符时返回 null。
+        /// </summary>
+        public static Delegate[] ReadTrackedEvent(object value)
+        {
+            if (value == null) return null;
+            var holder = value.GetType().GetField("m_Delegate", k_Instance)?.GetValue(value);
+            if (holder == null) return Array.Empty<Delegate>();
+            var entry = holder.GetType().GetField("m_DelegateOrList", k_Instance)?.GetValue(holder);
+            if (entry == null) return null;
+            switch (ReferenceOf(entry))
+            {
+                case null:
+                    return Array.Empty<Delegate>();
+                case Delegate single:
+                    return new[] { single };
+                case Array entries:
+                    var result = new List<Delegate>(entries.Length);
+                    foreach (var item in entries)
+                    {
+                        if (!(ReferenceOf(item) is Delegate callback)) return null;
+                        result.Add(callback);
+                    }
+
+                    return result.ToArray();
+                default:
+                    return null;
+            }
+        }
+
+        static object ReferenceOf(object entry) => entry?.GetType().GetField("Reference", k_Instance)?.GetValue(entry);
     }
 }
