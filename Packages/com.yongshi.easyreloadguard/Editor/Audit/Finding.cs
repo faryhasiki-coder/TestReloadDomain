@@ -1,3 +1,5 @@
+using System.Reflection;
+
 namespace EasyReloadGuard.Editor
 {
     internal enum Severity
@@ -18,6 +20,8 @@ namespace EasyReloadGuard.Editor
         public const string InvalidDeclaration = "RG010";
         public const string MissingReason = "RG011";
         public const string GenericExpansion = "RG012";
+        public const string DeclarationRisk = "RG013";
+        public const string OwnerCoverage = "RG014";
         public const string AdapterBroken = "RG020";
         public const string AdapterUnverified = "RG021";
         public const string AdapterRequiresReload = "RG022";
@@ -46,6 +50,12 @@ namespace EasyReloadGuard.Editor
         public bool Baselinable { get; }
 
         public bool Baselined { get; set; }
+
+        /// <summary>IL 分析得到的上下文（初值、赋值与修改位置），帮助判断处理方式；可为 null。</summary>
+        public string Context { get; set; }
+
+        /// <summary>问题对应的成员（静态字段等），供退出 Play 后的残留探测读取；可为 null。</summary>
+        public MemberInfo Member { get; set; }
 
         public string Key => RuleId + "|" + Subject;
 

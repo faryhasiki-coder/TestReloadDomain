@@ -54,6 +54,9 @@ namespace EasyReloadGuard.Editor
             EditorGUILayout.PropertyField(m_Settings.FindProperty(nameof(ReloadGuardSettings.prePlayCheck)), new GUIContent("进入 Play 前检查"));
             EditorGUILayout.PropertyField(m_Settings.FindProperty(nameof(ReloadGuardSettings.reloadOnResetFailure)), new GUIContent("重置失败后强制重载"));
             EditorGUILayout.PropertyField(m_Settings.FindProperty(nameof(ReloadGuardSettings.verboseLog)), new GUIContent("详细日志"));
+            EditorGUILayout.PropertyField(m_Settings.FindProperty(nameof(ReloadGuardSettings.residueProbe)), new GUIContent("退出 Play 后探测残留"));
+            EditorGUILayout.PropertyField(m_Settings.FindProperty(nameof(ReloadGuardSettings.residueProbeReadTypeInitializers)),
+                new GUIContent("残留探测读取有静态构造的类型"));
             EditorGUILayout.PropertyField(m_Settings.FindProperty(nameof(ReloadGuardSettings.excludedPackages)), new GUIContent("排除的包"));
             EditorGUILayout.PropertyField(m_Settings.FindProperty(nameof(ReloadGuardSettings.excludedAssemblies)), new GUIContent("排除的程序集"));
             if (EditorGUI.EndChangeCheck())
@@ -72,6 +75,7 @@ namespace EasyReloadGuard.Editor
                 if (GUILayout.Button("运行检查")) action = ReloadGuardMenu.RunAudit;
                 if (GUILayout.Button("将当前遗留问题写入基线")) action = ReloadGuardMenu.WriteBaseline;
                 if (GUILayout.Button("打开报告位置")) action = () => EditorUtility.RevealInFinder(ReloadAudit.DefaultReportPath);
+                if (GUILayout.Button("打开残留探测报告位置")) action = () => EditorUtility.RevealInFinder(ResidueProbe.ReportPath);
             }
 
             using (new EditorGUILayout.HorizontalScope())
@@ -114,7 +118,11 @@ namespace EasyReloadGuard.Editor
                 .ToList();
             m_Scroll = EditorGUILayout.BeginScrollView(m_Scroll);
             foreach (var finding in visible.Take(k_MaxRows))
-                EditorGUILayout.HelpBox(finding.ToString(), ToMessageType(finding));
+            {
+                var text = finding.Context == null ? finding.ToString() : $"{finding}\n上下文：{finding.Context}";
+                EditorGUILayout.HelpBox(text, ToMessageType(finding));
+            }
+
             if (visible.Count > k_MaxRows)
                 EditorGUILayout.HelpBox($"仅显示前 {k_MaxRows} 条，完整内容见 {ReloadAudit.DefaultReportPath}。", MessageType.None);
             EditorGUILayout.EndScrollView();
