@@ -17,11 +17,12 @@ namespace EasyReloadGuard.Editor
         public static List<Assembly> Resolve(ReloadGuardSettings settings, ResetPlan plan, AuditReport report)
         {
             var wanted = new SortedSet<string>(StringComparer.Ordinal);
+            var origins = new Dictionary<string, string>(StringComparer.Ordinal);
 
             foreach (var assembly in CompilationPipeline.GetAssemblies(AssembliesType.PlayerWithoutTestAssemblies))
             {
                 var package = assembly.sourceFiles.Length > 0 ? PackageNameFromPath(ToProjectRelative(assembly.sourceFiles[0])) : null;
-                Consider(assembly.name, package);
+                Consider(assembly.name, package, false);
             }
 
             var playerPlugins = PlayerPluginPaths();
@@ -32,7 +33,7 @@ namespace EasyReloadGuard.Editor
                 var relative = ToProjectRelative(path);
                 var package = PackageNameFromPath(relative);
                 if (package != null || relative.StartsWith("Assets/", StringComparison.Ordinal))
-                    Consider(AssemblyNameOf(path), package);
+                    Consider(AssemblyNameOf(path), package, true);
             }
 
             var result = new List<Assembly>();
@@ -42,11 +43,12 @@ namespace EasyReloadGuard.Editor
                 if (loaded == null || ReflectionUtil.IsTestAssembly(loaded)) continue;
                 result.Add(loaded);
                 report.ScannedAssemblies.Add(name);
+                report.AssemblyOrigins[name] = origins[name];
             }
 
             return result;
 
-            void Consider(string name, string package)
+            void Consider(string name, string package, bool precompiled)
             {
                 if (settings.excludedAssemblies.Contains(name)) return;
                 if (package != null && settings.excludedPackages.Contains(package)) return;
@@ -57,7 +59,15 @@ namespace EasyReloadGuard.Editor
                 }
 
                 wanted.Add(name);
+                origins[name] = Origin(package, precompiled);
             }
+        }
+
+        /// <summary>报告分组用的来源：Assets 源码、包源码或预编译 DLL。</summary>
+        internal static string Origin(string package, bool precompiled)
+        {
+            var location = package == null ? "Assets" : "包 " + package;
+            return precompiled ? "DLL（" + location + "）" : location;
         }
 
         /// <summary>

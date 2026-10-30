@@ -3,11 +3,14 @@
 用于关闭 Domain Reload（Enter Play Mode Options → DisableDomainReload）的工具包：静态状态重置、退出 Play 时释放、第三方 UPM/DLL 与业务程序集的 Editor 适配、离线检查与基线、强制重载。
 
 - **不影响出包逻辑（最强约束）**：运行时程序集 `EasyReloadGuard` 只有特性，以及 `PlaySession` 上带 `[Conditional("UNITY_EDITOR")]` 的 void 命令。Player 中没有会话状态、启动入口、退出订阅或取消令牌；业务的取消、回写、释放与初始化顺序完全由业务自己决定。
-- **接入边界**：业务代码只在**已有成员**上加特性，并为此引用 `EasyReloadGuard`（自动引用，Assembly-CSharp 不需要改 asmdef；asmdef 组织的业务添加该引用）。不要**为本包**新增业务方法、Unity 消息、参数、登记调用或控制分支（即业务不依赖本包的任何运行时状态或流程）。特性表达不了的状态放到独立的 Editor 适配器（见第 4 节）；业务没有可用入口时用 `KnownIssue` 记录，或用强制重载兜底。
+- **接入边界**：业务代码在**已有成员**上加特性，并为此引用 `EasyReloadGuard`（自动引用，Assembly-CSharp 不需要改 asmdef；asmdef 组织的业务添加该引用）。唯一允许新增的业务成员是**只在 Editor 编译的重置方法**：方法连同 `[ResetMethod]` 整体放在 `#if UNITY_EDITOR` 内，只把本类型的静态状态恢复为新域首次进入 Play 时的样子（见[接入手册](Documentation~/接入手册.md)第 4 节），Player 中不存在。除此之外，不要**为本包**新增业务方法、Unity 消息、参数、登记调用或控制分支（即业务不依赖本包的任何运行时状态或流程）。第三方代码放到独立的 Editor 适配器（见第 4 节）；没有可用入口时用 `KnownIssue` 记录，或用强制重载兜底。
+- **接入手册**：拿到检查报告后如何判断归属（业务缺陷 / 改模式源头 / 本包声明 / 适配器）、按上下文选择处理方式、禁忌清单与大工程的推进节奏，见 [Documentation~/接入手册.md](Documentation~/接入手册.md)。
 - **异步生命周期由业务负责**：异步任务、后台循环与晚到结果不得跨越其 owner 的生命周期，这是业务自身的正确性要求（Player 中切场景、返回主菜单、登出时同样成立），不属于“为本包改业务”。业务用自有取消源或引擎自带的 `Application.exitCancellationToken` / `MonoBehaviour.destroyCancellationToken` 结束异步工作；本包不替业务取消、搁置或改写异步延续，只由检查器提示风险（RG005/RG006，见第 1 节“异步与后台工作”）。
 - **Player 中没有开销**：Player 每次启动都是新的域，重置引擎只在 Editor 关闭 Domain Reload 时执行。
 - **方案统一**：新代码和旧代码都使用同一套特性；第三方代码使用适配器；实在无法处理时强制重载兜底。
 
+> 0.3.0 接入能力（2026-10-29）：检查器读取方法体 IL（只读，限声明类型内），每条报告附“上下文”（初值、赋值与内容修改位置、分析范围），建议按上下文给出；报告开头新增按来源 → 程序集 → 类型分组的工作清单；新增 RG013（已声明的重置会破坏下一会话）与 RG014（`[ResetMethod]` 没有覆盖类型内的可变字段）；私有且只在类型初始化时写入的字段/目录降为提示。允许业务新增 Editor-only 重置方法。新增退出 Play 后的残留探测（`Library/EasyReloadGuard/ResidueReport.md`）。新增[接入手册](Documentation~/接入手册.md)。6000.3.1f1 batchmode 验证：编译通过，EditMode 63 项中 62 通过，`EasyReloadGuard.Editor.Tests` 全部通过（新增 9 项）；唯一失败为既有的 MATH-02 全量顺序问题，单独运行通过。**残留探测尚未在用户编辑器中做 PSP 实测。**
+>
 > 0.2.0 异步规范调整（2026-10-28）：异步生命周期改由业务负责，移除 2026-10-27 短暂加入的 `IAsyncReloadHandler` / `AsyncHandler` 及工程侧样例原型，新增检查规则 RG005/RG006；同日清除接入样例的接入代码，样例恢复接入前形态。2026-10-28 经 Unity Pipeline 在 6000.3.1f1 下验证：编译通过，`EasyReloadGuard.Editor.Tests` **40/40 通过**（含新增异步规则测试）；检查为错误 0、警告 10、提示 1、已基线 8，阻断 0。较 10-27 新增的 3 条警告为 RG005 `AutoSaveService.Loop` 与恢复报告的两条样例 RG023（`AutoSaveService.s_Running`、`ProfileLoader.CurrentProfile`），RG006 未命中（该检查在清除样例接入代码之前运行）。**未运行 PSP 与接入验收。**
 >
 > 2026-10-27 的验证（Unity 6000.3.1f1，GPT/Codex 执行）对应调整前的代码：第 03 轮运行时隔离调整与 `IAsyncReloadHandler` 编译通过，`EasyReloadGuard.Editor.Tests` 40/40 通过；工程侧异步原型的后台工作验收 6/6、完整接入验收 11/12（INT-05 编辑态预览前置条件失败），四场景各 3 轮 Pipeline PSP 无新增错误。异步原型已移除，其 6/6 与 ExecuteAlways 场景的 PSP 结果不再适用；原型说明已归档到 `F:/本地文档/项目技术方案文档/域重载/归档/`。下面的 0.2.0 记录是隔离调整前的历史结果。
@@ -45,7 +48,7 @@ public class GameManager : MonoBehaviour
 | 有非默认初值的值类型/string | `[ResetStatic(ResetMode.InitialValue)]` |
 | `static readonly` 集合 | `[ResetStatic(ResetMode.Clear)]` |
 | 静态事件、自动属性 | `[field: ResetStatic]` |
-| 复杂 owner（池、注册表、需要按顺序恢复的不变量） | 标注 owner 已有的静态无参重置方法 `[ResetMethod(order)]`，该类型整体视为 owner 自行管理 |
+| 复杂 owner（池、注册表、需要按顺序恢复的不变量） | 标注 owner 的静态无参重置方法 `[ResetMethod(order)]`，该类型整体视为 owner 自行管理，检查器用 RG014 核对每个可变字段都被处理。没有现成入口时可新增 `#if UNITY_EDITOR` 的重置方法（见接入手册第 4 节） |
 | 订阅、线程、计时器、Socket、Native 内存 | 标注业务已有、语义适用的静态无参停止/释放方法 `[OnExitPlayMode(order)]`（如 `Stop()`）；没有现成入口时在 Editor 适配器中处理，不要为此新建方法 |
 | 有意跨会话保留的状态 | `[ReloadSafe("原因")]`（字段/类型/程序集，原因必填） |
 | 泛型单例 `Singleton<T>.s_Instance` | 在泛型定义的字段上加 `[ResetStatic]`，自动展开所有“经派生类出现”的闭合类型；业务直接使用的闭合类型在 Editor 适配器中补充：`b.ResetField(typeof(EventBus<EnemyKilled>).AssemblyQualifiedName, "s_Handlers")` |
@@ -104,25 +107,43 @@ public static class ProfileLoader
 2. 已经使用 Unity 推荐写法（`[RuntimeInitializeOnLoadMethod(SubsystemRegistration)]` 或 `[InitializeOnEnterPlayMode]`）的类型，视为自行重置，不再报告。
 3. **Tools/Easy Reload Guard/将当前遗留问题写入基线**：生成 `ProjectSettings/EasyReloadGuardBaseline.txt`，提交到版本管理。
 4. 在 Project Settings/Easy Reload Guard 中把“进入 Play 前检查”设为 **Block**。之后新增的问题会阻止进入 Play，基线内的遗留问题只做列出。
-5. 按报告逐个修复，修复后删除对应基线行。已经不存在的基线条目会以 RG030 提示。
+5. 按报告逐个修复，修复后删除对应基线行。已经不存在的基线条目会以 RG030 提示。判断归属与处理方式见[接入手册](Documentation~/接入手册.md)。
+
+报告的读法：
+
+- 开头的**工作清单**按 来源（Assets / 包 / DLL）→ 程序集 → 类型 汇总未基线的错误与警告，Assets 源码在前、问题多的类型在前。一个类型通常对应一个 owner，按行分工。
+- 每条字段问题下面有一行**上下文**，来自只读 IL 分析：初值（类型初始化中是否赋值/填充）、类型初始化外的赋值位置、内容修改位置（集合/数组/对象，启发式）、分析范围。私有字段结论完整；非私有字段、或经非私有属性 setter/事件访问器写入的字段，类型外的写入没有分析。lambda、局部函数与 async 状态机中的访问还原为源方法名。
+- 建议按上下文给出：例如只在类型初始化时填充的私有目录降为提示并提醒不要 Clear；有初值又被重新赋值的引用提醒 `[ResetStatic]` 会丢失初值。
 
 | 规则 | 级别 | 含义 |
 | --- | --- | --- |
 | RG001 | 错误 | 未处理的静态事件/委托 |
 | RG002 | 错误 | 未处理的静态 `UnityEngine.Object`（单例常见） |
-| RG003 | 警告 | 未处理的可变静态字段 |
-| RG004 | 警告/提示 | `readonly` 集合（警告）、数组或对象（提示）的内容可能残留 |
+| RG003 | 警告/提示 | 未处理的可变静态字段；私有且只在类型初始化时赋值（实际不变）为提示，建议改 const/readonly |
+| RG004 | 警告/提示 | `readonly` 集合（警告；私有且只在类型初始化时填充为提示）、数组（元素被改写为警告，否则提示）或对象（提示）的内容可能残留 |
 | RG005 | 警告 | `async void` 方法：延续会跨 Play 会话执行，需由业务 owner 取消 |
 | RG006 | 警告 | 未处理的 `Task`/`ValueTask`/`CancellationTokenSource`/`Thread`/计时器静态字段：异步工作或取消源跨会话存活 |
 | RG010 | 错误 | 特性用错（实例字段/属性/事件、readonly 用 Default、引用类型用 InitialValue、async 重置方法等），不可入基线 |
 | RG011 | 错误 | `[ReloadSafe]` 没写原因 |
 | RG012 | 提示/警告 | 泛型静态字段展开结果 |
+| RG013 | 警告 | 已声明的重置会破坏下一会话：`[ResetStatic]` 把只在类型初始化中创建、类型内没有其他赋值位置的引用置 null；`Clear` 清掉类型初始化中填充的内容。可入基线（类型外会重新赋值时） |
+| RG014 | 警告 | 类型有 `[ResetMethod]`，但重置方法（含其调用的类型内方法）没有赋值或清理某个可变静态字段；有意保留时用 `[ReloadSafe]`。可入基线 |
 | RG020 | 错误 | 适配器找不到类型/成员（目标已升级或改名），不可入基线 |
 | RG021 | 警告 | 适配器目标的版本未经复核 |
 | RG022 | 提示 | 适配器要求强制重载 |
 | RG023 | 警告 | 适配器登记的已知问题：包内经复核会影响运行逻辑的静态状态，可入基线 |
 | RG030 | 提示 | 基线条目已失效 |
 | RG040 | 警告 | 某个类型无法反射分析，已跳过 |
+
+### 退出 Play 后的残留探测
+
+关闭 Domain Reload 时，每次退出 Play、回到编辑模式后，探测结果写入 `Library/EasyReloadGuard/ResidueReport.md`，发现残留时在 Console 输出 `[Easy Reload Guard]` 警告。它补足元数据与 IL 检查看不到的运行时行为，做 PSP 时可直接定位 owner：
+
+- **已销毁对象的引用**：静态字段、集合元素或回调目标仍指向上一会话已销毁的 `UnityEngine.Object`。
+- **跨会话增长**：同一回调方法在引擎/编辑器静态事件（`EditorApplication`、`SceneManager`、`Application`、`Camera`、`Canvas`、`RenderPipelineManager` 等）或项目委托中的数量逐次增加，或集合元素逐次增加。从本域第 2 次回到编辑模式开始比较。
+- 项目字段取自最近一次检查报告中未处理（含已基线）的字段；本域没有运行过检查时只探测引擎回调。
+- 读取静态字段会触发尚未执行的静态构造，因此默认跳过有静态构造的项目类型，跳过数量写在报告中；设置“残留探测读取有静态构造的类型”可放开（可能在编辑模式执行本次 Play 没用到的类型的静态构造）。
+- 设置“退出 Play 后探测残留”可关闭本功能。
 
 ## 4. 第三方 UPM 包
 
@@ -214,7 +235,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File Tools/UnityCI/Run-UnityTests
 
 ## 8. 升级 Unity 的检查清单
 
-插拔边界：业务代码只在已有成员上使用 `EasyReloadGuard` 的特性。卸载本包时，删除这些特性、对应的 `using EasyReloadGuard;` 与 asmdef 引用，以及引用本包的 Editor 适配器即可，业务方法与流程不需要改回，Player 行为不变。
+插拔边界：业务代码只在已有成员上使用 `EasyReloadGuard` 的特性，另有只在 Editor 编译的重置方法。卸载本包时，删除这些特性、`#if UNITY_EDITOR` 的重置方法、对应的 `using EasyReloadGuard;` 与 asmdef 引用，以及引用本包的 Editor 适配器即可，业务方法与流程不需要改回，Player 行为不变。
 
 1. 复核 `Editor/Core/EditorCompat.cs`：Enter Play Mode 设置读取、在 ExitingEditMode 中取消进入 Play、`RequestScriptReload`、包版本查询。所有版本敏感的调用都集中在这个文件。
 2. 运行 `Tools/UnityCI/Run-UnityTests.ps1`（或在 Test Runner → EditMode 中运行 `EasyReloadGuard.Editor.Tests` 与 `DomainReloadCases.Tests`）。嵌入式包的测试默认可见，不需要配置 `testables`。
@@ -233,8 +254,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File Tools/UnityCI/Run-UnityTests
   - 磁盘上旧版的 `1/0` 组合无法通过 API 原样写回。
 
   需要修改设置时，先写 options，再写 `enabled = options != None`。本包只读这两项，不受影响。
-- 检查只基于反射元数据，无法识别 `await` 之后写入静态状态、lambda 形式的 `async void`、`ConfigureAwait(false)` 后在线程池上的写入；这些依靠业务按“异步与后台工作”的规范处理，并以 PSP 验证。
-- 检查只基于反射元数据，无法识别“静态构造中订阅了外部事件”这类行为。这类订阅需要由 owner 已有的释放入口（标注 `[OnExitPlayMode]`）或 Editor 适配器解除。
+- 检查读取反射元数据与声明类型内的方法体 IL（只读，不执行、不改写）。类型外对非私有字段的写入、经局部变量转手或参数中夹杂同类型调用的集合修改、反射写入都不在分析范围内；上下文中“范围”一项标明结论是否完整。
+- 检查无法判断 `await` 之后写入的状态是否已失效、lambda 形式的 `async void`、`ConfigureAwait(false)` 后在线程池上的写入；这些依靠业务按“异步与后台工作”的规范处理，并以 PSP 与残留探测验证。
+- 检查无法识别“静态构造中订阅了外部事件”这类行为。这类订阅需要由 owner 已有的释放入口（标注 `[OnExitPlayMode]`）或 Editor 适配器解除；连续 Play 时残留探测会把订阅的逐次增长报告出来。
+- 残留探测默认跳过有静态构造的项目类型（大多数带初值的集合都在其中），只读字段值，不分析引用链；“未发现残留”不等于没有残留。
 - 关闭 Scene Reload 带来的问题（对象不重建）不在本包范围内。
 - UniTask 2.5.11：`PlayerLoopHelper.InsertRunner` 每次初始化都向 `EditorApplication.playModeStateChanged` 追加一组匿名处理器（每个 timing 一个，共 16 个）且从不移除，关闭 Domain Reload 时每次进入 Play 累积一组，旧处理器持有旧 runner 和队列。本包不内置 UniTask 适配器：检查器看不到挂在 UnityEditor 事件上的订阅，也不能把它声明为整包已处理。应在 UniTask 源码中修复（内部托管版本）；测试工程中的临时做法见 `Assets/ReloadGuardProjectAdapters`。
 - 测试程序集（引用 nunit）中的特性和适配器不会进入项目的重置计划和检查。

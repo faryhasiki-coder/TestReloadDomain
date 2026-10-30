@@ -32,8 +32,11 @@ namespace EasyReloadGuard
     }
 
     /// <summary>
-    /// 进入 Play 时调用的静态无参 void 方法，在全部字段重置之后按 Order 升序执行。
-    /// 声明该方法的类型视为自行管理其全部静态状态（owner 负责）。方法须幂等且同步完成。
+    /// 进入 Play 时调用的静态无参 void 方法，在全部字段重置之后按 Order 升序执行。方法须幂等且同步完成。
+    /// 声明该方法的类型视为自行管理其全部静态状态（owner 负责）；检查器核对重置方法（含其调用的类型内方法）
+    /// 是否处理了每个可变静态字段（RG014），有意保留的字段用 [ReloadSafe] 说明。
+    /// 业务没有现成的重置入口时，可在该类型中新增只在 Editor 编译的方法：方法连同特性整体放在 #if UNITY_EDITOR 内，
+    /// 只把本类型的静态状态恢复为新域首次进入 Play 时的样子，不调用业务流程，也不被业务代码调用。Player 中不存在该方法。
     /// </summary>
     [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
     public sealed class ResetMethodAttribute : Attribute
@@ -48,7 +51,8 @@ namespace EasyReloadGuard
 
     /// <summary>
     /// 退出 Play（ExitingPlayMode）时调用的静态无参 void 方法，用于解除订阅、停止线程/计时器、释放外部资源。
-    /// 按 Order 升序执行；无论 Domain Reload 是否关闭都会执行。优先标注业务已有、语义适用的停止/释放方法，不要为此新建方法。
+    /// 按 Order 升序执行；无论 Domain Reload 是否关闭都会执行。只标注业务已有、语义适用的停止/释放方法，不要为此新建方法：
+    /// 订阅、线程、计时器与外部资源的释放在 Player 中切场景、登出时同样需要，属于业务生命周期，缺失时修业务本身。
     /// </summary>
     [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
     public sealed class OnExitPlayModeAttribute : Attribute

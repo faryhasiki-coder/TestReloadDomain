@@ -183,4 +183,115 @@ namespace EasyReloadGuard.Editor.Tests
 
         public override void Configure(ReloadAdapterBuilder builder) => throw new InvalidOperationException("目标不存在时不应调用");
     }
+
+    /// <summary>检查器 IL 分析的典型形态：只读目录、会话集合、混合集合、常量式字段、惰性引用、带初值的引用、元素被改写的数组。</summary>
+    static class ShapeFixture
+    {
+        static readonly Dictionary<string, int> s_Catalog = new Dictionary<string, int>();
+        static readonly List<int> s_Session = new List<int>();
+        static readonly List<int> s_Mixed = new List<int> { 1, 2 };
+        static readonly int[] s_Slots = new int[4];
+        static int s_Constant = 3;
+        static object s_Lazy;
+        static object s_Seeded = new object();
+        static object s_InitOnly = new object();
+
+        static ShapeFixture()
+        {
+            s_Catalog.Add("a", 1);
+        }
+
+        public static void Register(int value)
+        {
+            s_Session.Add(value);
+            s_Mixed.Add(value);
+            s_Slots[0] = value;
+        }
+
+        public static object Get() => s_Lazy ?? (s_Lazy = new object());
+
+        public static void Rebuild() => s_Seeded = new object();
+
+        public static int Read() => s_Constant + s_Catalog.Count + (s_InitOnly == null ? 0 : 1) + (s_Seeded == null ? 0 : 1);
+    }
+
+    /// <summary>赋值位置位于 async 状态机与 lambda 中，报告应还原为源方法名。</summary>
+    static class WriterNameFixture
+    {
+        static int s_Count;
+
+        public static int Count => s_Count;
+
+        public static async Task BumpAsync()
+        {
+            await Task.Yield();
+            s_Count++;
+        }
+
+        public static Action MakeReset() => () => s_Count = 0;
+    }
+
+    /// <summary>[ResetMethod] owner：重置方法直接或经类型内方法处理了部分字段，s_Forgotten 被遗漏。</summary>
+    static class CoverageFixture
+    {
+        static int s_Reset;
+        static int s_ViaHelper;
+        static int s_Forgotten;
+        static readonly List<int> s_Cleared = new List<int>();
+
+        [ReloadSafe("测试：有意跨会话保留")]
+        static int s_Kept;
+
+        public static void Use()
+        {
+            s_Reset++;
+            s_ViaHelper++;
+            s_Forgotten++;
+            s_Kept++;
+            s_Cleared.Add(1);
+        }
+
+        [ResetMethod]
+        static void ResetAll()
+        {
+            s_Reset = 0;
+            s_Cleared.Clear();
+            ResetHelper();
+        }
+
+        static void ResetHelper() => s_ViaHelper = 0;
+    }
+
+    /// <summary>经自动属性 setter 与事件访问器写入：写入方应归属为调用访问器的方法；公开访问器意味着类型外也能写入。</summary>
+    static class AccessorFixture
+    {
+        public static object Instance { get; private set; }
+
+        public static event Action Changed;
+
+        public static void Awake() => Instance = new object();
+
+        public static void Bind() => Changed += OnChanged;
+
+        public static void Raise() => Changed?.Invoke();
+
+        static void OnChanged()
+        {
+        }
+    }
+
+    /// <summary>没有初值与静态构造（TypeInitializer 为 null），残留探测可直接读取。</summary>
+    static class ResidueFixture
+    {
+        public static Action Callback;
+        public static Action<bool> Toggle;
+        public static List<int> Items;
+        public static GameObject Destroyed;
+    }
+
+    /// <summary>有初值即有静态构造，残留探测默认跳过。</summary>
+    static class InitializedResidueFixture
+    {
+        public static readonly List<int> Items = new List<int>();
+    }
 }

@@ -24,6 +24,7 @@ namespace EasyReloadGuard.Editor
                     ResetPipeline.RunExit();
                     break;
                 case PlayModeStateChange.EnteredEditMode:
+                    ResidueProbe.OnEnteredEditMode();
                     ForceReload.OnEnteredEditMode();
                     break;
             }
