@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using NUnit.Framework;
+using UnityEditor;
 using UnityEngine;
 
 namespace EasyReloadGuard.Editor.Tests
@@ -48,16 +49,60 @@ namespace EasyReloadGuard.Editor.Tests
         }
 
         [Test]
-        public void Capture_SkipsTypesWithStaticConstructorUnlessAllowed()
+        public void Capture_SkipsImpureStaticConstructorsUnlessAllowed()
         {
-            var skipped = Capture(typeof(InitializedResidueFixture), false);
+            var skipped = Capture(typeof(ImpureResidueFixture), false);
             Assert.AreEqual(1, skipped.Skipped);
             Assert.AreEqual(0, skipped.Read);
 
-            InitializedResidueFixture.Items.Add(1);
-            var read = Capture(typeof(InitializedResidueFixture), true);
+            var read = Capture(typeof(ImpureResidueFixture), true);
             Assert.AreEqual(0, read.Skipped);
             Assert.AreEqual(1, read.Counts.Values.Single());
+        }
+
+        [Test]
+        public void Capture_ReadsTypesWithPureStaticConstructorByDefault()
+        {
+            InitializedResidueFixture.Items.Add(1);
+            var snapshot = Capture(typeof(InitializedResidueFixture), false);
+
+            Assert.AreEqual(0, snapshot.Skipped);
+            Assert.AreEqual(1, snapshot.Counts.Values.Single());
+        }
+
+        [Test]
+        public void InitializerPurity_AcceptsDataOnlyInitializersAndRejectsExternalCalls()
+        {
+            Assert.IsTrue(InitializerPurity.IsPure(typeof(ResidueFixture)), "没有静态构造");
+            Assert.IsTrue(InitializerPurity.IsPure(typeof(InitializedResidueFixture)));
+            Assert.IsTrue(InitializerPurity.IsPure(typeof(ShapeFixture)), "静态构造中填充 BCL 集合");
+            Assert.IsTrue(InitializerPurity.IsPure(typeof(PureInitializerFixture)), "lambda 缓存、本类型纯方法、值类型构造、typeof、数组初始化");
+            Assert.IsFalse(InitializerPurity.IsPure(typeof(ImpureResidueFixture)), "Environment 不在白名单");
+            Assert.IsFalse(InitializerPurity.IsPure(typeof(UnityInitializerFixture)), "读取 UnityEngine 静态成员");
+        }
+
+        [Test]
+        public void Capture_ReadsEditorEventsStoredInPerformanceTrackerContainers()
+        {
+            var container = typeof(EditorApplication).GetField("m_PlayModeStateChangedEvent", k_Static);
+            Assume.That(container, Is.Not.Null, "本 Unity 版本的 playModeStateChanged 不使用 EventWithPerformanceTracker");
+            Assert.IsTrue(EditorCompat.IsTrackedEventType(container.FieldType));
+
+            EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
+            EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
+            try
+            {
+                var snapshot = ResidueSnapshot.Capture(new[] { container }, Enumerable.Empty<FieldInfo>(), false);
+
+                Assert.AreEqual(0, snapshot.Unreadable);
+                var counts = snapshot.Callbacks.Values.Single();
+                Assert.AreEqual(2, counts[typeof(ResidueProbeTests).FullName + "." + nameof(OnPlayModeStateChanged)]);
+            }
+            finally
+            {
+                EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
+                EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
+            }
         }
 
         [Test]
@@ -76,6 +121,10 @@ namespace EasyReloadGuard.Editor.Tests
             ResidueSnapshot.Capture(Enumerable.Empty<FieldInfo>(), type.GetFields(k_Static), readTypeInitializers);
 
         static void OnCallback()
+        {
+        }
+
+        static void OnPlayModeStateChanged(PlayModeStateChange change)
         {
         }
     }

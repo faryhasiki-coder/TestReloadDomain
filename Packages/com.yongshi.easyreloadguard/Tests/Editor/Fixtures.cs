@@ -289,9 +289,36 @@ namespace EasyReloadGuard.Editor.Tests
         public static GameObject Destroyed;
     }
 
-    /// <summary>有初值即有静态构造，残留探测默认跳过。</summary>
+    /// <summary>静态构造只创建 BCL 集合，是纯初始化，残留探测默认读取。</summary>
     static class InitializedResidueFixture
     {
         public static readonly List<int> Items = new List<int>();
+    }
+
+    /// <summary>静态构造调用白名单外的 API（Environment），视为不纯，残留探测默认跳过。</summary>
+    static class ImpureResidueFixture
+    {
+        public static readonly List<int> Items = new List<int> { Environment.ProcessorCount };
+    }
+
+    /// <summary>纯初始化的常见写法：lambda 缓存、调用本类型的纯方法、值类型构造、typeof、数组初始化。</summary>
+    static class PureInitializerFixture
+    {
+        static readonly Func<int> s_Factory = () => 1;
+        static readonly List<int> s_Built = Build();
+        static readonly Vector3 s_Up = new Vector3(0f, 1f, 0f);
+        static readonly Type s_Type = typeof(PureInitializerFixture);
+        static readonly int[] s_Table = { 1, 2, 3, 4, 5, 6, 7, 8 };
+        static readonly string s_Name = "a" + nameof(s_Name);
+
+        static List<int> Build() => new List<int> { 1 };
+
+        public static int Use() => s_Factory() + s_Built.Count + (int)s_Up.y + s_Table.Length + s_Name.Length + (s_Type == null ? 0 : 1);
+    }
+
+    /// <summary>静态构造读取 UnityEngine 的静态成员，视为不纯。</summary>
+    static class UnityInitializerFixture
+    {
+        public static readonly string ProductName = Application.productName;
     }
 }
