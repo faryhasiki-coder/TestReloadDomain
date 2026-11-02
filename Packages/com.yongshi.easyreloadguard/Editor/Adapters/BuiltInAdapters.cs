@@ -7,16 +7,19 @@ namespace EasyReloadGuard.Editor
     // UniTask 2.5.11 不在此列：PlayerLoopHelper.InsertRunner 的 Editor 回调会累积（见 README“已知限制”），应在 UniTask 源码中修复。
 
     /// <summary>
-    /// 依据 1.17.0 源码 InputSystem.OnPlayModeChange：在 Play 边界同步设备、重置 InputUser 与 ActionState。
+    /// 依据 1.17.0 与 1.20.0 源码：InputSystemEditorInitializer.OnPlayModeChange 在 Play 边界同步设备、重置 InputUser 与 ActionState；
+    /// 1.20.0 起官方支持关闭 Domain Reload（ISX-2411）：RuntimeInitialize(BeforeSceneLoad) 重新执行编辑器初始化，
+    /// InputActionState/PlayerInput 的全局状态在关闭 Domain Reload 时于 BeforeSceneLoad 重置。
     /// </summary>
     internal sealed class InputSystemAdapter : ReloadAdapter
     {
         public override string Target => "com.unity.inputsystem";
 
-        public override string[] VerifiedVersions => new[] { "1.17.0" };
+        public override string[] VerifiedVersions => new[] { "1.17.0", "1.20.0" };
 
         public override void Configure(ReloadAdapterBuilder builder) =>
-            builder.SelfHandled("InputSystem.OnPlayModeChange 在 Play 边界同步设备并重置 InputUser/ActionState；" +
+            builder.SelfHandled("OnPlayModeChange 在 Play 边界同步设备并重置 InputUser/ActionState；1.20.0 起关闭 Domain Reload 时" +
+                                "于 BeforeSceneLoad 重新初始化并重置 InputActionState/PlayerInput 全局状态；" +
                                 "不清除 InputAction 的 started/performed/canceled 回调，业务订阅仍须由业务 owner 解除。");
     }
 
@@ -118,36 +121,40 @@ namespace EasyReloadGuard.Editor
             builder.SelfHandled("编译进度/性能事件只在 BurstLoader 静态构造中订阅一次；Cecil 依赖仅编辑器可用；其余为函数指针缓存、常量与设置。");
     }
 
-    /// <summary>依据 2.6.2 源码复核：自定义分配器委托由 owner 成对 Register/Unregister，其余为 Burst 函数指针与查找表。</summary>
+    /// <summary>依据 2.6.2 与 2.6.3 源码复核（2.6.3 仅增加容量上限检查与常量，无静态状态变化）：自定义分配器委托由 owner 成对 Register/Unregister，其余为 Burst 函数指针与查找表。</summary>
     internal sealed class CollectionsAdapter : ReloadAdapter
     {
         public override string Target => "com.unity.collections";
 
-        public override string[] VerifiedVersions => new[] { "2.6.2" };
+        public override string[] VerifiedVersions => new[] { "2.6.2", "2.6.3" };
 
         public override void Configure(ReloadAdapterBuilder builder) =>
             builder.SelfHandled("AllocatorManager 的 TryFunctionDelegates 与原生表由分配器 owner 成对 Register/Unregister（业务自定义分配器须自行 Unregister）；" +
                                 "其余为 Burst 惰性函数指针缓存与只读查找表。");
     }
 
-    /// <summary>依据 2.0.9 源码复核：组件注册表 OnEnable/OnDisable 成对维护，并在 BeforeSceneLoad 清空。</summary>
+    /// <summary>
+    /// 依据 2.0.9 与 2.0.11 源码复核：组件注册表 OnEnable/OnDisable 成对维护，并在 BeforeSceneLoad 清空。
+    /// 部分内部镜像的 2.0.11 另含 NavMeshModifierCylinder：注册表同样 OnEnable/OnDisable 成对，临时体积列表只由 Editor 烘焙成对创建与清理。
+    /// </summary>
     internal sealed class AiNavigationAdapter : ReloadAdapter
     {
         public override string Target => "com.unity.ai.navigation";
 
-        public override string[] VerifiedVersions => new[] { "2.0.9" };
+        public override string[] VerifiedVersions => new[] { "2.0.9", "2.0.11" };
 
         public override void Configure(ReloadAdapterBuilder builder) =>
             builder.SelfHandled("NavMeshSurface/Modifier/ModifierVolume/Link 的注册表 OnEnable/OnDisable 成对维护，" +
-                                "并由 RuntimeInitializeOnLoadMethod(BeforeSceneLoad) 清空。");
+                                "并由 RuntimeInitializeOnLoadMethod(BeforeSceneLoad) 清空；NavMeshModifierCylinder（内部镜像）注册表成对维护，" +
+                                "临时体积列表仅 Editor 烘焙前后成对创建与清理。");
     }
 
-    /// <summary>依据 3.2.2（Json.NET 13.0.2）上游源码复核：静态字段为惰性反射缓存与只读表。</summary>
+    /// <summary>依据 3.2.2（Json.NET 13.0.2）上游源码复核：静态字段为惰性反射缓存与只读表。3.2.1 的 Newtonsoft.Json.dll 与 AOT 版本与 3.2.2 字节一致。</summary>
     internal sealed class NewtonsoftJsonAdapter : ReloadAdapter
     {
         public override string Target => "com.unity.nuget.newtonsoft-json";
 
-        public override string[] VerifiedVersions => new[] { "3.2.2" };
+        public override string[] VerifiedVersions => new[] { "3.2.1", "3.2.2" };
 
         public override void Configure(ReloadAdapterBuilder builder) =>
             builder.SelfHandled("静态字段为 _init 守卫下的惰性反射缓存与只读表；JsonConvert.DefaultSettings 是全局配置钩子，库内只读，业务写入时由业务负责。");

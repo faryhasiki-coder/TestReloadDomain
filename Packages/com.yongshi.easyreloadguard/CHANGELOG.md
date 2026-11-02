@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.2] - 2026-11-02
+
+内置适配器版本复核（Origins 收尾被 4 条不可入基线的 RG021 阻断；以两工程中较高的版本为复核基准，已验证的旧版本保留）：
+
+- Input System 追加 1.20.0：`InputSystemEditorInitializer.OnPlayModeChange` 的 Play 边界处理与 1.17.0 一致；1.20.0 新增官方的关闭 Domain Reload 支持（ISX-2411），`RuntimeInitialize(BeforeSceneLoad)` 重新执行编辑器初始化，`InputActionState`/`PlayerInput` 全局状态在关闭 Domain Reload 时于 BeforeSceneLoad 重置。
+- Collections 追加 2.6.3：运行时源码差异为容量上限检查与 `MaxCapacity` 常量，无静态状态变化。
+- AI Navigation 追加 2.0.11：官方变更为警告与 UI 修复；内部镜像另含 `NavMeshModifierCylinder`，其注册表 OnEnable/OnDisable 成对维护，临时体积列表只由 Editor 烘焙成对创建与清理。
+- Newtonsoft Json 追加 3.2.1：`Newtonsoft.Json.dll` 与 AOT 版本和已复核的 3.2.2 字节一致。
+- README 内置适配器表同步。
+
 ## [0.3.1] - 2026-10-30
 
 依据 Origins 首次 PSP 基线（0.3.0）暴露的残留探测盲区：

@@ -9,6 +9,8 @@
 - **Player 中没有开销**：Player 每次启动都是新的域，重置引擎只在 Editor 关闭 Domain Reload 时执行。
 - **方案统一**：新代码和旧代码都使用同一套特性；第三方代码使用适配器；实在无法处理时强制重载兜底。
 
+> 0.3.2（2026-11-02）：内置适配器补充复核 Input System 1.20.0（官方开始支持关闭 Domain Reload）、Collections 2.6.3、AI Navigation 2.0.11（含内部镜像的 NavMeshModifierCylinder）、Newtonsoft Json 3.2.1（DLL 与 3.2.2 字节一致），消除 Origins 的 4 条 RG021。
+>
 > 0.3.1（2026-10-30）：残留探测读取 Unity 6 的 `EventWithPerformanceTracker` 事件容器（Origins PSP 发现 `playModeStateChanged` 漏读）；静态构造为纯初始化的类型默认读取，不再整体跳过（Origins 三轮每轮跳过 4,220 个字段）。6000.3.1f1 batchmode：`EasyReloadGuard.Editor.Tests` 53/53 通过。尚未在用户编辑器中重做 PSP。
 >
 > 0.3.0 接入能力（2026-10-29）：检查器读取方法体 IL（只读，限声明类型内），每条报告附“上下文”（初值、赋值与内容修改位置、分析范围），建议按上下文给出；报告开头新增按来源 → 程序集 → 类型分组的工作清单；新增 RG013（已声明的重置会破坏下一会话）与 RG014（`[ResetMethod]` 没有覆盖类型内的可变字段）；私有且只在类型初始化时写入的字段/目录降为提示。允许业务新增 Editor-only 重置方法。新增退出 Play 后的残留探测（`Library/EasyReloadGuard/ResidueReport.md`）。新增[接入手册](Documentation~/接入手册.md)。6000.3.1f1 batchmode 验证：编译通过，EditMode 63 项中 62 通过，`EasyReloadGuard.Editor.Tests` 全部通过（新增 9 项）；唯一失败为既有的 MATH-02 全量顺序问题，单独运行通过。**残留探测尚未在用户编辑器中做 PSP 实测。**
@@ -157,16 +159,16 @@ public static class ProfileLoader
 
   | 包 | 版本 | 仍报告的已知问题（RG023） |
   | --- | --- | --- |
-  | Input System | 1.17.0 | — |
+  | Input System | 1.17.0、1.20.0 | — |
   | Core RP | 17.3.0 | `DebugUpdater`：每次 Play 调用 `EnhancedTouchSupport.Enable()` 不配对 Disable |
   | URP | 17.3.0 | — |
   | uGUI / TextMeshPro | 2.0.0 | `MaterialReferenceManager` 富文本资产缓存；`EventSystem` 废弃覆盖 API；`PanelEventHandler` 修饰键；两个 UI Toolkit picker 未能确认 |
   | Visual Scripting | 1.9.9 | — |
   | Timeline | 1.8.9 | — |
   | Burst | 1.8.26 | — |
-  | Collections | 2.6.2 | — |
-  | AI Navigation | 2.0.9 | — |
-  | Newtonsoft Json | 3.2.2 | — |
+  | Collections | 2.6.2、2.6.3 | — |
+  | AI Navigation | 2.0.9、2.0.11 | — |
+  | Newtonsoft Json | 3.2.1、3.2.2 | — |
   | Unity MCP（com.coplaydev.unity-mcp） | 10.0.0 | — |
 
 - 忽略只覆盖包自身。业务代码订阅包的公开静态事件或全局钩子（如 `TMP_Text.OnFontAssetRequest`、`UniTaskScheduler.UnobservedTaskException`、`EventBus.Register`、`JsonConvert.DefaultSettings`）时，检查器看不到这类订阅，仍须由业务 owner 在退出 Play 时成对解除。
