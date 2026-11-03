@@ -1,9 +1,9 @@
 namespace EasyReloadGuard.Editor
 {
     // 内置适配器登记已复核版本的结论：SelfHandled 表示该版本包内静态状态经逐条源码复核，关闭 Domain Reload 时不影响 Play 运行逻辑
-    // （确定性缓存/常量、仅编辑器路径、包自身在 Play 边界或 owner 生命周期中重置、使用前判空重建、有意保留的设置）；
-    // 复核出的例外用 KnownIssue 继续报告。目标升级后检查器报 RG021，需重新复核。
-    // 忽略只覆盖包自身：业务代码对包公开静态事件/全局钩子的订阅仍由业务 owner 成对解除，检查器看不到这类订阅。
+    // （确定性缓存/常量、仅编辑器路径、包自身在 Play 开始/结束或对象生命周期中重置、使用前判空重建、有意保留的设置）；
+    // 复核出的例外用 KnownIssue 继续报告。目标升级后检查器报告“适配器目标的版本未复核”，需重新复核。
+    // 忽略只覆盖包自身：业务代码对包公开静态事件/全局钩子的订阅仍由业务代码成对解除，检查器看不到这类订阅。
     // UniTask 2.5.11 不在此列：PlayerLoopHelper.InsertRunner 的 Editor 回调会累积（见 README“已知限制”），应在 UniTask 源码中修复。
 
     /// <summary>
@@ -20,7 +20,7 @@ namespace EasyReloadGuard.Editor
         public override void Configure(ReloadAdapterBuilder builder) =>
             builder.SelfHandled("OnPlayModeChange 在 Play 边界同步设备并重置 InputUser/ActionState；1.20.0 起关闭 Domain Reload 时" +
                                 "于 BeforeSceneLoad 重新初始化并重置 InputActionState/PlayerInput 全局状态；" +
-                                "不清除 InputAction 的 started/performed/canceled 回调，业务订阅仍须由业务 owner 解除。");
+                                "不清除 InputAction 的 started/performed/canceled 回调，业务的订阅仍须由业务代码自己取消。");
     }
 
     /// <summary>依据 17.3.0 源码复核：静态资源随渲染管线创建/Dispose 管理，不随 Play 边界变化；Unity 对象使用前判空重建。</summary>
@@ -37,7 +37,7 @@ namespace EasyReloadGuard.Editor
                                 "CameraCaptureBridge 在相机已销毁时不移除条目，仅为托管内存增长，不改变渲染结果。");
             builder.KnownIssue("UnityEngine.Rendering.DebugUpdater, Unity.RenderPipelines.Core.Runtime", "s_Instance",
                 "启用运行时调试 UI 且安装 Input System 时，每次进入 Play 重建 [Debug Updater] 并调用 EnhancedTouchSupport.Enable()，" +
-                "从不调用 Disable；Input System 的启用计数逐会话累加，业务调用一次 Disable() 无法关闭 EnhancedTouch。");
+                "从不调用 Disable；Input System 的启用计数每次 Play 加一，业务调用一次 Disable() 无法关闭 EnhancedTouch。");
         }
     }
 
@@ -72,16 +72,16 @@ namespace EasyReloadGuard.Editor
                                 "TMP_Text.OnFontAssetRequest/OnSpriteAssetRequest/OnMissingCharacter 与 TMPro_EventManager 是公开扩展点，" +
                                 "业务订阅须成对解除。");
             builder.KnownIssue($"TMPro.MaterialReferenceManager, {k_TextMeshPro}", "s_Instance",
-                "富文本 <sprite>/<material>/<font> 引用的资产缓存跨会话保留且无重置：引用的是会话内加载后卸载（AssetBundle/Addressables）" +
-                "或运行时创建后销毁的资产时，下一会话直接取到已销毁对象，请求回调不再被调用（字体条目也不会被替换）。持久资产不受影响。");
+                "富文本 <sprite>/<material>/<font> 引用的资产缓存会带到下一次 Play，且没有重置入口：引用的是 Play 中加载后卸载（AssetBundle/Addressables）" +
+                "或运行时创建后销毁的资产时，下一次 Play 直接取到已销毁对象，请求回调不再被调用（字体条目也不会被替换）。持久资产不受影响。");
             builder.KnownIssue($"UnityEngine.EventSystems.EventSystem, {k_UGui}", "s_UIToolkitOverrideConfigOld",
-                "调用已废弃的 EventSystem.SetUITookitEventSystemOverride 后，覆盖配置跨会话保留，下一会话的 EventSystem 在 OnEnable 中沿用。");
+                "调用已废弃的 EventSystem.SetUITookitEventSystemOverride 后，覆盖配置会带到下一次 Play，下一次 Play 的 EventSystem 在 OnEnable 中沿用。");
             builder.KnownIssue($"UnityEngine.UIElements.PanelEventHandler, {k_UGui}", "s_Modifiers",
-                "UGUI EventSystem 驱动 UI Toolkit 面板时，上一会话最后的修饰键（如 Ctrl+P 停止）会带到下一会话的第一个指针/导航事件，约 1 帧后恢复。");
+                "UGUI EventSystem 驱动 UI Toolkit 面板时，上一次 Play 最后的修饰键（如 Ctrl+P 停止）会带到下一次 Play 的第一个指针/导航事件，约 1 帧后恢复。");
             builder.KnownIssue($"UnityEngine.UIElements.PanelRaycaster, {k_UGui}", "panelPicker",
-                "ScreenOverlayPanelPicker 实现在引擎内，未能确认无跨会话状态。");
+                "ScreenOverlayPanelPicker 实现在引擎内，未能确认它没有带到下一次 Play 的状态。");
             builder.KnownIssue($"UnityEngine.UIElements.WorldDocumentRaycaster, {k_UGui}", "worldPicker",
-                "PhysicsDocumentPicker 实现在引擎内，未能确认无跨会话状态。");
+                "PhysicsDocumentPicker 实现在引擎内，未能确认它没有带到下一次 Play 的状态。");
         }
     }
 
@@ -121,7 +121,7 @@ namespace EasyReloadGuard.Editor
             builder.SelfHandled("编译进度/性能事件只在 BurstLoader 静态构造中订阅一次；Cecil 依赖仅编辑器可用；其余为函数指针缓存、常量与设置。");
     }
 
-    /// <summary>依据 2.6.2 与 2.6.3 源码复核（2.6.3 仅增加容量上限检查与常量，无静态状态变化）：自定义分配器委托由 owner 成对 Register/Unregister，其余为 Burst 函数指针与查找表。</summary>
+    /// <summary>依据 2.6.2 与 2.6.3 源码复核（2.6.3 仅增加容量上限检查与常量，无静态状态变化）：自定义分配器委托由创建分配器的代码成对 Register/Unregister，其余为 Burst 函数指针与查找表。</summary>
     internal sealed class CollectionsAdapter : ReloadAdapter
     {
         public override string Target => "com.unity.collections";
@@ -129,7 +129,7 @@ namespace EasyReloadGuard.Editor
         public override string[] VerifiedVersions => new[] { "2.6.2", "2.6.3" };
 
         public override void Configure(ReloadAdapterBuilder builder) =>
-            builder.SelfHandled("AllocatorManager 的 TryFunctionDelegates 与原生表由分配器 owner 成对 Register/Unregister（业务自定义分配器须自行 Unregister）；" +
+            builder.SelfHandled("AllocatorManager 的 TryFunctionDelegates 与原生表由创建分配器的代码成对 Register/Unregister（业务自定义分配器须自行 Unregister）；" +
                                 "其余为 Burst 惰性函数指针缓存与只读查找表。");
     }
 

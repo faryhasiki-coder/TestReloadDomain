@@ -41,7 +41,7 @@ namespace EasyReloadGuard.Editor
             {
                 var loaded = ReflectionUtil.FindLoadedAssembly(name);
                 if (loaded == null || ReflectionUtil.IsTestAssembly(loaded)) continue;
-                // 本包运行时程序集的会话编号与登记表由本包在 Play 边界自行管理（只在 Editor 中存在），由包自身的测试覆盖，不进入项目报告与基线
+                // 本包运行时程序集的 Play 计数与登记表由本包在 Play 开始/结束时自行管理（只在 Editor 中存在），由包自身的测试覆盖，不进入项目报告与遗留清单
                 if (loaded == typeof(PlaySession).Assembly) continue;
                 result.Add(loaded);
                 report.ScannedAssemblies.Add(name);

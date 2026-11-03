@@ -42,8 +42,8 @@ namespace EasyReloadGuard.Editor
         {
             var disabled = EditorCompat.DomainReloadDisabled;
             var text = EditorCompat.DescribePlayModeOptions() + (disabled
-                ? "。进入 Play 时执行重置计划，退出时执行释放步骤。"
-                : "。Domain Reload 开启：不执行重置，退出释放仍执行；检查可照常运行，为关闭做准备。");
+                ? "。进入 Play 时重置声明过的静态状态，退出 Play 时调用释放方法。"
+                : "。Domain Reload 开启时不需要重置，退出 Play 时仍调用释放方法；可以先运行检查，为关闭 Domain Reload 做准备。");
             EditorGUILayout.HelpBox(text, disabled ? MessageType.Info : MessageType.None);
         }
 
@@ -52,11 +52,11 @@ namespace EasyReloadGuard.Editor
             m_Settings.Update();
             EditorGUI.BeginChangeCheck();
             EditorGUILayout.PropertyField(m_Settings.FindProperty(nameof(ReloadGuardSettings.prePlayCheck)), new GUIContent("进入 Play 前检查"));
-            EditorGUILayout.PropertyField(m_Settings.FindProperty(nameof(ReloadGuardSettings.reloadOnResetFailure)), new GUIContent("重置失败后强制重载"));
+            EditorGUILayout.PropertyField(m_Settings.FindProperty(nameof(ReloadGuardSettings.reloadOnResetFailure)), new GUIContent("重置失败后重新加载脚本"));
             EditorGUILayout.PropertyField(m_Settings.FindProperty(nameof(ReloadGuardSettings.verboseLog)), new GUIContent("详细日志"));
-            EditorGUILayout.PropertyField(m_Settings.FindProperty(nameof(ReloadGuardSettings.residueProbe)), new GUIContent("退出 Play 后探测残留"));
+            EditorGUILayout.PropertyField(m_Settings.FindProperty(nameof(ReloadGuardSettings.residueProbe)), new GUIContent("停止 Play 后检查残留"));
             EditorGUILayout.PropertyField(m_Settings.FindProperty(nameof(ReloadGuardSettings.residueProbeReadTypeInitializers)),
-                new GUIContent("残留探测读取有静态构造的类型"));
+                new GUIContent("停止后检查也读取有静态构造的类型"));
             EditorGUILayout.PropertyField(m_Settings.FindProperty(nameof(ReloadGuardSettings.excludedPackages)), new GUIContent("排除的包"));
             EditorGUILayout.PropertyField(m_Settings.FindProperty(nameof(ReloadGuardSettings.excludedAssemblies)), new GUIContent("排除的程序集"));
             if (EditorGUI.EndChangeCheck())
@@ -73,15 +73,15 @@ namespace EasyReloadGuard.Editor
             using (new EditorGUILayout.HorizontalScope())
             {
                 if (GUILayout.Button("运行检查")) action = ReloadGuardMenu.RunAudit;
-                if (GUILayout.Button("将当前遗留问题写入基线")) action = ReloadGuardMenu.WriteBaseline;
+                if (GUILayout.Button("把当前问题记为已知遗留")) action = ReloadGuardMenu.WriteBaseline;
                 if (GUILayout.Button("打开报告位置")) action = () => EditorUtility.RevealInFinder(ReloadAudit.DefaultReportPath);
-                if (GUILayout.Button("打开残留探测报告位置")) action = () => EditorUtility.RevealInFinder(ResidueProbe.ReportPath);
+                if (GUILayout.Button("打开停止后检查报告位置")) action = () => EditorUtility.RevealInFinder(ResidueProbe.ReportPath);
             }
 
             using (new EditorGUILayout.HorizontalScope())
             {
-                if (GUILayout.Button("立即重载域")) action = ForceReload.ReloadNow;
-                if (GUILayout.Button("重载域并进入 Play")) action = () => ForceReload.ReloadAndPlay("设置页手动请求");
+                if (GUILayout.Button("立即重新加载脚本")) action = ForceReload.ReloadNow;
+                if (GUILayout.Button("重新加载脚本并进入 Play")) action = () => ForceReload.ReloadAndPlay("设置页手动请求");
             }
 
             if (action == null) return;
@@ -95,22 +95,22 @@ namespace EasyReloadGuard.Editor
             EditorGUILayout.Space();
             if (report == null)
             {
-                EditorGUILayout.HelpBox("本域尚未运行检查。", MessageType.None);
+                EditorGUILayout.HelpBox("本次脚本加载后还没有运行检查。", MessageType.None);
                 return;
             }
 
-            EditorGUILayout.LabelField($"检查结果（{report.Time:HH:mm:ss}）：{report.Summary()}；阻断 {report.BlockingCount}", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField($"检查结果（{report.Time:HH:mm:ss}）：{report.Summary()}", EditorStyles.boldLabel);
             EditorGUILayout.LabelField($"扫描程序集：{(report.ScannedAssemblies.Count == 0 ? "无" : string.Join(", ", report.ScannedAssemblies))}", EditorStyles.wordWrappedMiniLabel);
             foreach (var adapter in report.Plan.Adapters.Where(a => a.Active))
             {
-                EditorGUILayout.LabelField($"适配器 {adapter.Target} {adapter.InstalledVersion}：{(adapter.Verified ? "已验证" : "未验证")}",
+                EditorGUILayout.LabelField($"适配器 {adapter.Target} {adapter.InstalledVersion}：{(adapter.Verified ? "版本已复核" : "版本未复核")}",
                     EditorStyles.miniLabel);
             }
 
             using (new EditorGUILayout.HorizontalScope())
             {
                 m_ShowInfo = EditorGUILayout.ToggleLeft("显示提示", m_ShowInfo);
-                m_ShowBaselined = EditorGUILayout.ToggleLeft("显示已基线", m_ShowBaselined);
+                m_ShowBaselined = EditorGUILayout.ToggleLeft("显示已知遗留", m_ShowBaselined);
             }
 
             var visible = report.Findings
@@ -119,7 +119,7 @@ namespace EasyReloadGuard.Editor
             m_Scroll = EditorGUILayout.BeginScrollView(m_Scroll);
             foreach (var finding in visible.Take(k_MaxRows))
             {
-                var text = finding.Context == null ? finding.ToString() : $"{finding}\n上下文：{finding.Context}";
+                var text = finding.Context == null ? finding.ToString() : $"{finding}\n读写位置：{finding.Context}";
                 EditorGUILayout.HelpBox(text, ToMessageType(finding));
             }
 

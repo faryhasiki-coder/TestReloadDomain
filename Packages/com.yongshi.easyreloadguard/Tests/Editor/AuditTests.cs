@@ -129,8 +129,8 @@ namespace EasyReloadGuard.Editor.Tests
 
             var mixed = FindingOf(report, "s_Mixed");
             Assert.AreEqual(Severity.Warning, mixed.Severity);
-            StringAssert.Contains("既在类型初始化时填充", mixed.Message);
-            StringAssert.Contains("初始内容：类型初始化中填充", mixed.Context);
+            StringAssert.Contains("既在静态初始化时填充", mixed.Message);
+            StringAssert.Contains("初始内容：静态初始化中填充", mixed.Context);
 
             Assert.AreEqual(Severity.Warning, FindingOf(report, "s_Slots").Severity, "数组元素在类型初始化外被改写");
 
@@ -253,9 +253,11 @@ namespace EasyReloadGuard.Editor.Tests
 
             var markdown = report.ToMarkdown();
 
-            StringAssert.Contains("## 工作清单（2 个类型", markdown);
+            StringAssert.Contains("## 按类型汇总（2 个类型", markdown);
             StringAssert.Contains("| Assets | EasyReloadGuard.Editor.Tests | EasyReloadGuard.Editor.Tests.AuditFixture |", markdown);
-            StringAssert.Contains("  - 上下文：", markdown);
+            StringAssert.Contains("### " + RuleIds.Title(RuleIds.MutableStatic), markdown, "条目按问题类型分小节");
+            StringAssert.Contains("  - 读写位置：", markdown);
+            StringAssert.DoesNotContain("RG0", markdown, "给人看的报告不出现规则编号");
             Assert.AreEqual(("Asm", "Ns.Type"), AuditReport.SplitSubject("Asm|Ns.Type.s_Field"));
             Assert.AreEqual("DLL（包 com.example）", AuditScope.Origin("com.example", true));
         }

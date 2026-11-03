@@ -17,12 +17,12 @@ namespace EasyReloadGuard.Editor
                 var plan = ResetPlan.Current;
                 var reason = ForceReload.TakePendingReason(plan);
                 if (!DomainState.IsFresh && plan.FieldSteps.Any(s => s.NeedsCleanBaseline))
-                    reason = Append(reason, "本域已运行过 Play，InitialValue 字段需要在干净的域中记录初值");
+                    reason = Append(reason, "本次脚本加载后已运行过 Play，InitialValue 字段需要在重新加载后的干净状态下记录初值");
 
                 if (reason != null && !DomainState.IsFresh)
                 {
                     EditorCompat.CancelEnterPlayMode();
-                    Log.Warning($"本次进入 Play 改为先重载域：{reason}");
+                    Log.Warning($"本次进入 Play 改为先重新加载脚本：{reason}");
                     EditorCompat.RunOnNextUpdate(() => ForceReload.ReloadAndPlay(reason));
                     return;
                 }
@@ -44,11 +44,11 @@ namespace EasyReloadGuard.Editor
             var report = ReloadAudit.Cached;
             if (report.BlockingCount == 0) return;
 
-            var message = $"关闭 Domain Reload 的检查发现 {report.BlockingCount} 个未处理错误（{report.Summary()}）。";
+            var message = $"检查发现 {report.BlockingCount} 个错误不在遗留问题清单中（{report.Summary()}）。";
             if (mode == PrePlayCheck.Block)
             {
                 EditorCompat.CancelEnterPlayMode();
-                Log.Error(message + "已阻止进入 Play：修复、用 [ReloadSafe] 说明原因或写入基线后重试。\n" + report.TopLines(20));
+                Log.Error(message + "已阻止进入 Play：修复、用 [ReloadSafe] 说明保留原因，或确认后记为已知遗留，然后重试。\n" + report.TopLines(20));
                 if (!Application.isBatchMode) ReloadGuardSettingsProvider.Open();
             }
             else

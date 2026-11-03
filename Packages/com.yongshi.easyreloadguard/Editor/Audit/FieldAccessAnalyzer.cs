@@ -66,13 +66,13 @@ namespace EasyReloadGuard.Editor
         internal static string DisplayName(MethodBase method)
         {
             // MethodBase.IsConstructor 对静态构造返回 false，用类型判断
-            if (method is ConstructorInfo) return method.IsStatic ? "类型初始化" : "实例构造";
+            if (method is ConstructorInfo) return method.IsStatic ? "静态初始化" : "实例构造";
             var name = method.Name;
             if (name.StartsWith("<", StringComparison.Ordinal))
             {
                 var source = Inner(name);
                 var kind = name.Contains(">g__") ? "局部函数" : "lambda";
-                return source == ".cctor" ? $"类型初始化（{kind}）" : $"{source}（{kind}）";
+                return source == ".cctor" ? $"静态初始化（{kind}）" : $"{source}（{kind}）";
             }
 
             var declaring = method.DeclaringType;
