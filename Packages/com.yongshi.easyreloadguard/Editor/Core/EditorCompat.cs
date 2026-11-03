@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using UnityEditor;
+using UnityEngine;
 
 namespace EasyReloadGuard.Editor
 {
@@ -10,16 +11,54 @@ namespace EasyReloadGuard.Editor
     /// </summary>
     internal static class EditorCompat
     {
+        // 6000.3.1f1 实测：EditorSettings.enterPlayModeOptionsEnabled 的读取值只由 options 推导，写入也不改序列化字段；
+        // 进入 Play 时 Unity 实际按序列化字段 m_EnterPlayModeOptionsEnabled 决定。该字段为 false 时接口显示已关闭 Domain Reload，
+        // 脚本却照样重新加载。因此“是否启用”以序列化字段为准，读不到时退回接口值。
+        const string k_EditorSettingsPath = "ProjectSettings/EditorSettings.asset";
+        const string k_OptionsEnabledProperty = "m_EnterPlayModeOptionsEnabled";
+        static SerializedObject s_EditorSettings;
+
+        /// <summary>Unity 进入 Play 时实际使用的“启用 Enter Play Mode 选项”开关。</summary>
+        static bool OptionsEnabled
+        {
+            get
+            {
+                if (s_EditorSettings == null || s_EditorSettings.targetObject == null)
+                {
+                    var assets = AssetDatabase.LoadAllAssetsAtPath(k_EditorSettingsPath);
+                    s_EditorSettings = assets.Length > 0 && assets[0] != null ? new SerializedObject(assets[0]) : null;
+                }
+
+                if (s_EditorSettings == null) return EditorSettings.enterPlayModeOptionsEnabled;
+                // 实测 UpdateIfRequiredOrScript 看不到其他 SerializedObject 对该字段的修改，必须完整读取
+                s_EditorSettings.Update();
+                var property = s_EditorSettings.FindProperty(k_OptionsEnabledProperty);
+                return property != null ? property.boolValue : EditorSettings.enterPlayModeOptionsEnabled;
+            }
+        }
+
         public static bool DomainReloadDisabled =>
-            EditorSettings.enterPlayModeOptionsEnabled &&
-            (EditorSettings.enterPlayModeOptions & EnterPlayModeOptions.DisableDomainReload) != 0;
+            OptionsEnabled && (EditorSettings.enterPlayModeOptions & EnterPlayModeOptions.DisableDomainReload) != 0;
 
         public static bool SceneReloadDisabled =>
+            OptionsEnabled && (EditorSettings.enterPlayModeOptions & EnterPlayModeOptions.DisableSceneReload) != 0;
+
+        /// <summary>
+        /// 接口显示已关闭 Domain Reload，但项目设置中的开关实际是关的，Unity 进入 Play 时仍会重新加载脚本。
+        /// 通常由脚本只写了 EditorSettings 接口造成；脚本中应同时用 SerializedObject 写入 m_EnterPlayModeOptionsEnabled。
+        /// </summary>
+        public static bool PlayModeOptionsMismatch =>
             EditorSettings.enterPlayModeOptionsEnabled &&
-            (EditorSettings.enterPlayModeOptions & EnterPlayModeOptions.DisableSceneReload) != 0;
+            (EditorSettings.enterPlayModeOptions & EnterPlayModeOptions.DisableDomainReload) != 0 &&
+            !DomainReloadDisabled;
+
+        public const string MismatchHint =
+            "设置不一致：EditorSettings 接口显示已关闭 Domain Reload，但 EditorSettings.asset 中的 m_EnterPlayModeOptionsEnabled 为 false，" +
+            "进入 Play 时 Unity 仍会重新加载脚本。请在 Project Settings/Editor 中检查 Enter Play Mode 设置；用脚本切换时要同时写入这个字段";
 
         public static string DescribePlayModeOptions() =>
-            $"Domain Reload={(DomainReloadDisabled ? "关闭" : "开启")}，Scene Reload={(SceneReloadDisabled ? "关闭" : "开启")}";
+            $"Domain Reload={(DomainReloadDisabled ? "关闭" : "开启")}，Scene Reload={(SceneReloadDisabled ? "关闭" : "开启")}" +
+            (PlayModeOptionsMismatch ? $"（{MismatchHint}）" : string.Empty);
 
         /// <summary>在 ExitingEditMode 回调中取消本次进入 Play。</summary>
         public static void CancelEnterPlayMode() => EditorApplication.isPlaying = false;
@@ -40,6 +79,22 @@ namespace EasyReloadGuard.Editor
                 action();
             };
             EditorApplication.update += once;
+        }
+
+        /// <summary>
+        /// 显示主工具栏中的自定义元素（Overlay id 即 MainToolbarElement 的 path）。6000.3 中只有 Unity 自带元素默认显示，
+        /// 第三方元素默认隐藏，且没有公开的默认显示选项。工具栏窗口尚未创建时返回 false。
+        /// </summary>
+        public static bool TryShowMainToolbarElement(string path)
+        {
+            foreach (var window in Resources.FindObjectsOfTypeAll<EditorWindow>())
+            {
+                if (window.GetType().Name != "MainToolbarWindow" || !window.TryGetOverlay(path, out var overlay)) continue;
+                overlay.displayed = true;
+                return true;
+            }
+
+            return false;
         }
 
         public static Dictionary<string, string> GetRegisteredPackageVersions()

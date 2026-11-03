@@ -21,6 +21,9 @@ namespace EasyReloadGuard.Editor
         public List<Finding> Findings { get; } = new List<Finding>();
         public List<string> ScannedAssemblies { get; } = new List<string>();
         public List<string> SelfHandledAssemblies { get; } = new List<string>();
+
+        /// <summary>所在目录放了排除标记、因此跳过的程序集 → “标记目录：原因”。</summary>
+        public SortedDictionary<string, string> MarkerExcludedAssemblies { get; } = new SortedDictionary<string, string>(StringComparer.Ordinal);
         public List<string> LegacySelfResetTypes { get; } = new List<string>();
 
         /// <summary>扫描过的程序集的来源（Assets、包 名称、DLL（…）），用于按类型汇总。</summary>
@@ -62,6 +65,7 @@ namespace EasyReloadGuard.Editor
             sb.AppendLine($"- 进入 Play 时重置 {Plan.FieldSteps.Count} 个字段、调用 {Plan.EnterSteps.Count} 个重置方法；退出 Play 时调用 {Plan.ExitSteps.Count} 个释放方法");
             sb.AppendLine($"- 扫描的程序集：{Join(ScannedAssemblies)}");
             sb.AppendLine($"- 由适配器声明为不需要处理、因此跳过的程序集：{Join(SelfHandledAssemblies)}");
+            sb.AppendLine($"- 所在目录放了排除标记（{AuditScope.ExcludeMarkerFileName}）、因此跳过的程序集：{Join(MarkerExcludedAssemblies.Select(p => $"{p.Key}（{p.Value}）").ToList())}");
             sb.AppendLine($"- 已用 SubsystemRegistration 或 InitializeOnEnterPlayMode 自行重置、因此跳过的类型（{LegacySelfResetTypes.Count}）：{Join(LegacySelfResetTypes)}");
             sb.AppendLine();
             sb.AppendLine("## 第三方包与 DLL 的适配器");

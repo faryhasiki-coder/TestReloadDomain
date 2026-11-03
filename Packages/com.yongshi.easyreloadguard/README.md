@@ -93,10 +93,10 @@ public static class ProfileLoader
 
 ## 4. 处理已有项目
 
-1. **运行检查**：菜单 `Tools/Easy Reload Guard/运行检查`。扫描 Assets 和全部包（含预编译 DLL）中参与打包的代码，报告写入 `Library/EasyReloadGuard/AuditReport.md`。不需要检查的包，在设置的“排除的包”中添加。
+1. **运行检查**：菜单 `Tools/Easy Reload Guard/检查静态变量并查看结果`，结果显示在设置页 `Project Settings/Easy Reload Guard`。扫描 Assets 和全部包（含预编译 DLL）中参与打包的代码，报告写入 `Library/EasyReloadGuard/AuditReport.md`。不需要检查的包，在设置的“排除的包”中添加。只在自己电脑上安装、不随项目提交的插件，用下面的排除标记，不要写进共享设置。
 2. 已经使用 Unity 推荐写法（`[RuntimeInitializeOnLoadMethod(SubsystemRegistration)]` 或 `[InitializeOnEnterPlayMode]`）自行重置的类型，不再报告。
-3. **记录已知遗留**：菜单 `Tools/Easy Reload Guard/把当前问题记为已知遗留`，把当前所有问题写入 `ProjectSettings/EasyReloadGuardBaseline.txt`，并提交到版本管理。
-4. **阻止新问题**：在 `Project Settings/Easy Reload Guard` 中把“进入 Play 前检查”设为 **Block**。之后新出现的错误会阻止进入 Play，已知遗留的问题只列出、不阻止。
+3. **记录已知遗留**：看过检查结果后，点设置页中的“把当前问题记为已知遗留”，把当前所有问题写入 `ProjectSettings/EasyReloadGuardBaseline.txt`，并提交到版本管理。
+4. **阻止新问题**：在 `Project Settings/Easy Reload Guard` 中把“进入 Play 前检查”设为 **阻止进入 Play**。之后新出现的错误会阻止进入 Play，已知遗留的问题只列出、不阻止。
 5. **逐个修复**：按报告修复问题，修复后删除清单中对应的行。已修复但没有删除的行，报告会提示“遗留问题清单中的过期行”。判断方法见[接入手册](Documentation~/接入手册.md)。
 
 ### 检查报告怎么看
@@ -137,7 +137,7 @@ public static class ProfileLoader
 
 ### 已知遗留问题清单
 
-`ProjectSettings/EasyReloadGuardBaseline.txt` 记录了“已经知道、暂时不修”的问题，作用是让 Block 模式只拦截**新出现的**问题：
+`ProjectSettings/EasyReloadGuardBaseline.txt` 记录了“已经知道、暂时不修”的问题，作用是让“阻止进入 Play”只拦截**新出现的**问题：
 
 - 文件由菜单生成，按问题类型分组，每组上方有注释说明这是什么问题。每行的格式为 `规则编号|程序集|类型.成员`，由工具比对，不要手工添加新行（编号对照见文末附录）。
 - 清单中的问题仍然列在报告末尾的“已知遗留”中，只是不阻止进入 Play。
@@ -156,6 +156,7 @@ public static class ProfileLoader
 ## 5. 第三方包和 DLL
 
 - 默认**扫描全部包**，规则与 Assets 相同。确认不需要检查的包，在设置的“排除的包”中添加。
+- **个人本机插件用排除标记**：在插件根目录放一个名为 `.easyreloadguard-exclude` 的文件，这个目录及子目录里的程序集都不检查（有 asmdef 的源码程序集和 DLL；没有 asmdef 的代码会编进 `Assembly-CSharp`，不能用标记单独跳过）。文件内容可选，写一句原因，例如“本机个人插件，不随项目”，会显示在报告里。查找从程序集的 asmdef 或 DLL 所在目录逐级向上，到包根目录（含 `package.json`）或工程根目录为止，放在工程根目录的标记不生效。文件名以点开头，Unity 不导入、不生成 `.meta`；放好后运行一次检查即可生效。被跳过的程序集列在报告开头和设置页，不会悄悄消失；它们的静态状态不再检查，需要自己负责。
 - 公司内部维护的包，直接修改包源码；外部官方来源的包保持源码不变，用适配器处理。
 - 判断标准是“上一次 Play 留下的值会不会改变下一次 Play 的结果”，而不是“有没有静态字段”。以下情况都不影响结果：确定性的缓存和常量、只在编辑器中使用的代码、包自己会在 Play 开始/结束或对象销毁时重置、使用前判空重建、有意保留的设置。只增不删但不会被读取的缓存只会增加内存，在依据中注明即可。
 - 包内的静态状态逐条复核、确认不影响运行后，写一个适配器并调用 `SelfHandled("依据")`，此后这个包不再检查。复核中发现的例外用 `KnownIssue(类型, 成员, 说明)` 继续报告为警告。只复核了部分类型时，用 `HandlesType` 逐个声明。
@@ -238,6 +239,7 @@ DLL 按以下顺序尝试，前一种不可行时再用下一种：
 | --- | --- |
 | `Tools/Easy Reload Guard/立即重新加载脚本` | Play 中会先停止，再调用 `EditorUtility.RequestScriptReload()` |
 | `Tools/Easy Reload Guard/重新加载脚本并进入 Play` | 重新加载完成后自动进入 Play |
+| 主工具栏 Play 按钮旁的“重载并 Play” | 同上；右键可只重新加载脚本或打开设置页。第一次加载本包时自动显示（每人每工程一次），之后可在工具栏右键菜单 `Easy Reload Guard` 中隐藏或重新显示 |
 | `ForceReload.RequestBeforeNextPlay(reason)`（Editor） | 下次进入 Play 时先取消，重新加载后再进入 |
 | `PlaySession.RequestDomainReload(reason)`（运行时代码中调用，Player 中会被编译器删除） | 同上 |
 | 重置或释放失败、适配器 `RequireDomainReload` | 自动登记 |
@@ -264,7 +266,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File Tools/UnityCI/Run-UnityTests
 
 升级 Unity 后：
 
-1. 复核 `Editor/Core/EditorCompat.cs`：所有和 Unity 版本相关的调用（读取 Enter Play Mode 设置、在 ExitingEditMode 中取消进入 Play、`RequestScriptReload`、查询包版本）都集中在这个文件。
+1. 复核 `Editor/Core/EditorCompat.cs`：所有和 Unity 版本相关的调用（读取 Enter Play Mode 设置及其序列化字段、在 ExitingEditMode 中取消进入 Play、`RequestScriptReload`、查询包版本）都集中在这个文件。
 2. 运行 `Tools/UnityCI/Run-UnityTests.ps1`（或在 Test Runner → EditMode 中运行 `EasyReloadGuard.Editor.Tests` 和 `DomainReloadCases.Tests`）。嵌入式包的测试默认可见，不需要配置 `testables`。
 3. 运行检查，处理“适配器找不到目标”和“适配器目标的版本未复核”（内置适配器对应的包可能也随 Unity 升级了）。
 4. 关闭 Domain Reload，连续 Play → Stop 至少 3 次，确认 Console 中没有 `[Easy Reload Guard]` 错误。
@@ -280,7 +282,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File Tools/UnityCI/Run-UnityTests
   - 对 `None` 设 `enabled = true`，options 会变成“两项都关闭”；
   - 磁盘上旧版的 `1/0` 组合无法通过 API 原样写回。
 
-  需要修改设置时，先写 options，再写 `enabled = options != None`。本包只读取这两项，不受影响。
+  需要修改设置时，先写 options，再写 `enabled = options != None`。
+- 6000.3.1f1 实测：接口读到的 `enterPlayModeOptionsEnabled` 只由 options 推导，写入也不会改动 `EditorSettings.asset` 中的 `m_EnterPlayModeOptionsEnabled`；而进入 Play 时 Unity 按这个序列化字段决定。字段为 false 时，接口显示已关闭 Domain Reload，脚本却照样重新加载。本包以序列化字段为准判断是否关闭了 Domain Reload；两者不一致时，设置页和检查报告会提示，进入 Play 时 Console 也会输出警告。用脚本切换时，要用 `SerializedObject` 同时写入该字段，结束后清除脏标记。
 - 检查只读取反射信息和所在类型内方法的编译后代码，不执行、不修改。类型外对非私有字段的写入、经局部变量转手的集合修改、反射写入都不在分析范围内；“读写位置”中的“范围”一项会标明结论是否完整。
 - 检查无法判断 `await` 之后写入的状态是否已失效，也看不到 lambda 形式的 `async void`、`ConfigureAwait(false)` 之后在线程池上的写入。这些依靠业务按第 3 节处理，并用连续 Play → Stop 和停止后检查验证。
 - 检查看不到“静态构造中订阅了外部事件”。这类订阅需要由负责的代码在已有的释放方法中取消（加 `[OnExitPlayMode]`），或在 Editor 适配器中处理；连续 Play 时，停止后检查会报告订阅次数的增加。
