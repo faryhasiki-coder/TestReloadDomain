@@ -215,6 +215,37 @@ namespace EasyReloadGuard.Editor.Tests
         }
 
         [Test]
+        public void ScanType_ReloadSafeFieldsWrittenInSessionAreReportedAsDrift()
+        {
+            var report = Scan(new ResetPlan(), typeof(SafeDriftFixture), typeof(SafeTypeDriftFixture), typeof(CoverageFixture), typeof(AuditFixture));
+
+            var drifted = report.Findings.Where(f => f.RuleId == RuleIds.SafeDrift).Select(f => f.Subject.Split('.').Last()).ToList();
+            CollectionAssert.AreEquivalent(new[] { "s_Cache", "s_Count", "s_Value", "s_Kept" }, drifted,
+                "只在类型初始化时填充、类型内没有写入或缺少原因的声明不报告");
+            Assert.IsTrue(report.Findings.Where(f => f.RuleId == RuleIds.SafeDrift).All(f => f.Severity == Severity.Warning && f.Baselinable));
+
+            var count = FindingOf(report, "s_Count");
+            StringAssert.Contains("测试：有意跨会话保留", count.Message);
+            StringAssert.Contains("在 Bump 中赋值", count.Message);
+            Assert.AreEqual("赋值=Bump;修改=", count.KeyDetail);
+            Assert.AreEqual("赋值=;修改=Remember", FindingOf(report, "s_Cache").KeyDetail);
+            Assert.AreEqual("赋值=Set;修改=", FindingOf(report, "s_Value").KeyDetail, "类型级声明逐字段检查");
+        }
+
+        [Test]
+        public void Baseline_DriftEntryMatchesOnlyTheReviewedWriteSites()
+        {
+            var report = Scan(new ResetPlan(), typeof(SafeDriftFixture));
+            var count = FindingOf(report, "s_Count");
+
+            Baseline.Apply(report, new HashSet<string> { RuleIds.SafeDrift + "|" + count.Subject, RuleIds.SafeDrift + "|" + count.Subject + "|赋值=Old;修改=" });
+            Assert.IsFalse(count.Baselined, "写入位置与复核时不同，基线条目失效");
+
+            Baseline.Apply(report, new HashSet<string> { count.Key });
+            Assert.IsTrue(count.Baselined);
+        }
+
+        [Test]
         public void ToMarkdown_GroupsUnbaselinedFindingsByOriginAndType()
         {
             var report = Scan(new ResetPlan(), typeof(AuditFixture), typeof(ShapeFixture));

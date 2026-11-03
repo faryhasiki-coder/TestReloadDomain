@@ -9,6 +9,8 @@
 - **Player 中没有开销**：Player 每次启动都是新的域，重置引擎只在 Editor 关闭 Domain Reload 时执行。
 - **方案统一**：新代码和旧代码都使用同一套特性；第三方代码使用适配器；实在无法处理时强制重载兜底。
 
+> 0.3.3（2026-11-03）：新增 RG015，`[ReloadSafe]` 字段在会话中仍被写入时报告；基线键附带写入位置，写入位置变化时基线失效、需要重新复核。**仅静态校验，未编译、未运行测试。**
+>
 > 0.3.2（2026-11-02）：内置适配器补充复核 Input System 1.20.0（官方开始支持关闭 Domain Reload）、Collections 2.6.3、AI Navigation 2.0.11（含内部镜像的 NavMeshModifierCylinder）、Newtonsoft Json 3.2.1（DLL 与 3.2.2 字节一致），消除 Origins 的 4 条 RG021。
 >
 > 0.3.1（2026-10-30）：残留探测读取 Unity 6 的 `EventWithPerformanceTracker` 事件容器（Origins PSP 发现 `playModeStateChanged` 漏读）；静态构造为纯初始化的类型默认读取，不再整体跳过（Origins 三轮每轮跳过 4,220 个字段）。6000.3.1f1 batchmode：`EasyReloadGuard.Editor.Tests` 53/53 通过。尚未在用户编辑器中重做 PSP。
@@ -54,7 +56,7 @@ public class GameManager : MonoBehaviour
 | 静态事件、自动属性 | `[field: ResetStatic]` |
 | 复杂 owner（池、注册表、需要按顺序恢复的不变量） | 标注 owner 的静态无参重置方法 `[ResetMethod(order)]`，该类型整体视为 owner 自行管理，检查器用 RG014 核对每个可变字段都被处理。没有现成入口时可新增 `#if UNITY_EDITOR` 的重置方法（见接入手册第 4 节） |
 | 订阅、线程、计时器、Socket、Native 内存 | 标注业务已有、语义适用的静态无参停止/释放方法 `[OnExitPlayMode(order)]`（如 `Stop()`）；没有现成入口时在 Editor 适配器中处理，不要为此新建方法 |
-| 有意跨会话保留的状态 | `[ReloadSafe("原因")]`（字段/类型/程序集，原因必填） |
+| 有意跨会话保留的状态 | `[ReloadSafe("原因")]`（字段/类型/程序集，原因必填）。字段/类型级声明之后仍被会话内写入时报 RG015，复核后写入基线 |
 | 泛型单例 `Singleton<T>.s_Instance` | 在泛型定义的字段上加 `[ResetStatic]`，自动展开所有“经派生类出现”的闭合类型；业务直接使用的闭合类型在 Editor 适配器中补充：`b.ResetField(typeof(EventBus<EnemyKilled>).AssemblyQualifiedName, "s_Handlers")` |
 | ScriptableObject 等 `OnEnable` 只执行一次的实例状态 | 特性只处理静态成员。在 Editor 适配器中用 `OnReset` 定位已加载实例，调用其已有入口（例如重新执行原有的 `OnEnable`，等同开启 Domain Reload 时的行为）；不要在业务 `OnEnable` 中插入登记 |
 | 异步任务、后台循环、晚到的异步结果 | 业务 owner 负责，见下文“异步与后台工作”。业务已有的停止/取消方法可标注 `[OnExitPlayMode]`；第三方代码用适配器调用其自带的取消入口，没有入口时 `KnownIssue` 记录或 `RequireDomainReload` 兜底 |
@@ -132,6 +134,7 @@ public static class ProfileLoader
 | RG012 | 提示/警告 | 泛型静态字段展开结果 |
 | RG013 | 警告 | 已声明的重置会破坏下一会话：`[ResetStatic]` 把只在类型初始化中创建、类型内没有其他赋值位置的引用置 null；`Clear` 清掉类型初始化中填充的内容。可入基线（类型外会重新赋值时） |
 | RG014 | 警告 | 类型有 `[ResetMethod]`，但重置方法（含其调用的类型内方法）没有赋值或清理某个可变静态字段；有意保留时用 `[ReloadSafe]`。可入基线 |
+| RG015 | 警告 | `[ReloadSafe]`（字段或类型级）覆盖的可变字段在类型初始化以外仍被赋值或修改内容：声明后的改动可能让原因失效。复核后可入基线；基线键附带写入位置，位置变化时失效需重新复核。只分析声明类型内，程序集级声明不检查 |
 | RG020 | 错误 | 适配器找不到类型/成员（目标已升级或改名），不可入基线 |
 | RG021 | 警告 | 适配器目标的版本未经复核 |
 | RG022 | 提示 | 适配器要求强制重载 |

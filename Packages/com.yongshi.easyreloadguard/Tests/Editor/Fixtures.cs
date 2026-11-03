@@ -316,6 +316,35 @@ namespace EasyReloadGuard.Editor.Tests
         public static int Use() => s_Factory() + s_Built.Count + (int)s_Up.y + s_Table.Length + s_Name.Length + (s_Type == null ? 0 : 1);
     }
 
+    /// <summary>[ReloadSafe] 之后的漂移：s_Names 只在类型初始化时填充；s_Cache、s_Count 在会话中被写入。</summary>
+    static class SafeDriftFixture
+    {
+        [ReloadSafe("测试：只读名称表")]
+        static readonly List<string> s_Names = new List<string> { "a" };
+
+        [ReloadSafe("测试：纯计算缓存")]
+        static readonly Dictionary<int, int> s_Cache = new Dictionary<int, int>();
+
+        [ReloadSafe("测试：有意跨会话保留")]
+        static int s_Count;
+
+        public static string First() => s_Names[0];
+
+        public static void Remember(int x) => s_Cache[x] = x * x;
+
+        public static void Bump() => s_Count++;
+    }
+
+    [ReloadSafe("测试：整体安全，但会话中被写入")]
+    static class SafeTypeDriftFixture
+    {
+        static int s_Value;
+
+        public static void Set(int value) => s_Value = value;
+
+        public static int Get() => s_Value;
+    }
+
     /// <summary>静态构造读取 UnityEngine 的静态成员，视为不纯。</summary>
     static class UnityInitializerFixture
     {

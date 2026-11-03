@@ -37,7 +37,7 @@ namespace EasyReloadGuard.Editor
         static readonly HashSet<string> k_ProbedRules = new HashSet<string>(StringComparer.Ordinal)
         {
             RuleIds.StaticDelegate, RuleIds.StaticUnityObject, RuleIds.MutableStatic, RuleIds.ReadonlyState,
-            RuleIds.AsyncResource, RuleIds.OwnerCoverage, RuleIds.AdapterKnownIssue,
+            RuleIds.AsyncResource, RuleIds.OwnerCoverage, RuleIds.SafeDrift, RuleIds.AdapterKnownIssue,
         };
 
         static ResidueSnapshot s_Previous;
@@ -88,7 +88,7 @@ namespace EasyReloadGuard.Editor
             k_EngineTypes.SelectMany(t => t.GetFields(ReflectionUtil.StaticMembers))
                 .Where(f => typeof(Delegate).IsAssignableFrom(f.FieldType) || EditorCompat.IsTrackedEventType(f.FieldType));
 
-        /// <summary>检查报告中未处理（含已基线）的静态字段；已声明重置的字段每次进入 Play 都会恢复，不在探测范围内。</summary>
+        /// <summary>检查报告中未处理（含已基线）以及声明 [ReloadSafe] 但会话中被写入（RG015）的静态字段；已声明重置的字段每次进入 Play 都会恢复，不在探测范围内。</summary>
         static IEnumerable<FieldInfo> ProjectFields(AuditReport audit) =>
             audit == null
                 ? Enumerable.Empty<FieldInfo>()
