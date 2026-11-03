@@ -9,3 +9,6 @@ RG003|DomainReloadCases|DomainReloadCases.LeakyUniTaskLoader.HeldResources
 RG003|DomainReloadCases|DomainReloadCases.LeakyUniTaskLoader.LastCompletedLoad
 RG003|DomainReloadCases|DomainReloadCases.LeakyUniTaskLoader.StartedLoads
 RG004|DomainReloadCases|DomainReloadCases.LeakyCaseCounter.Instances
+# 以下 2 条为修复案例 GuardedUniTaskLoader 的 RG015（0.3.3 起）：[ReloadSafe] 字段在 CancelAll/HoldAsync 中被写入是案例的设计，原因仍成立。
+RG015|DomainReloadCases|DomainReloadCases.GuardedUniTaskLoader.HeldResources|赋值=HoldAsync（async/迭代器）;修改=
+RG015|DomainReloadCases|DomainReloadCases.GuardedUniTaskLoader.s_Cts|赋值=CancelAll;修改=

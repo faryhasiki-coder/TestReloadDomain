@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.4] - 2026-11-03
+
+- 检查范围排除本包运行时程序集 `EasyReloadGuard`：`PlaySession` 的会话编号与登记表由本包在 Play 边界自行管理、只在 Editor 中存在，并由包自身测试覆盖。0.3.3 的 RG015 会把这 3 个字段报给每个接入项目并写进项目基线。
+- 0.3.3 的 RG015 在 Unity 6000.3.1f1 batchmode 下编译通过，`EasyReloadGuard.Editor.Tests` 55/55 通过；本工程修复组 `GuardedUniTaskLoader` 的 2 条 RG015 复核后写入基线（写入为案例设计，原因仍成立）。
+
 ## [0.3.3] - 2026-11-03
 
 `[ReloadSafe]` 声明后的漂移检测（此前标注后字段被直接跳过，之后新增的会话内写入无法发现）：
