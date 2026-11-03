@@ -22,6 +22,7 @@ namespace EasyReloadGuard.Editor
         public const string GenericExpansion = "RG012";
         public const string DeclarationRisk = "RG013";
         public const string OwnerCoverage = "RG014";
+        public const string SafeDrift = "RG015";
         public const string AdapterBroken = "RG020";
         public const string AdapterUnverified = "RG021";
         public const string AdapterRequiresReload = "RG022";
@@ -57,7 +58,10 @@ namespace EasyReloadGuard.Editor
         /// <summary>问题对应的成员（静态字段等），供退出 Play 后的残留探测读取；可为 null。</summary>
         public MemberInfo Member { get; set; }
 
-        public string Key => RuleId + "|" + Subject;
+        /// <summary>附加在基线键末尾的证据（如 RG015 的写入位置）：证据变化时基线条目失效，需要重新复核；可为 null。</summary>
+        public string KeyDetail { get; set; }
+
+        public string Key => KeyDetail == null ? RuleId + "|" + Subject : RuleId + "|" + Subject + "|" + KeyDetail;
 
         public bool IsBlocking => Severity == Severity.Error && !Baselined;
 

@@ -83,6 +83,13 @@ namespace EasyReloadGuard.Editor
             if (typeSafe != null)
             {
                 CheckReason(typeSafe, ReflectionUtil.Subject(type), report);
+                foreach (var field in type.GetFields(ReflectionUtil.StaticMembers))
+                {
+                    if (field.IsLiteral || plan.IsFieldHandled(field)) continue;
+                    if (field.IsDefined(typeof(CompilerGeneratedAttribute), false) && !ReflectionUtil.IsBackingField(type, field)) continue;
+                    CheckDrift(field, field.GetCustomAttribute<ReloadSafeAttribute>(false) ?? typeSafe, report);
+                }
+
                 return;
             }
 
@@ -111,6 +118,7 @@ namespace EasyReloadGuard.Editor
                 if (fieldSafe != null)
                 {
                     CheckReason(fieldSafe, ReflectionUtil.Subject(field), report);
+                    CheckDrift(field, fieldSafe, report);
                     continue;
                 }
 
@@ -381,6 +389,7 @@ namespace EasyReloadGuard.Editor
                 if (fieldSafe != null)
                 {
                     CheckReason(fieldSafe, ReflectionUtil.Subject(field), report);
+                    CheckDrift(field, fieldSafe, report);
                     continue;
                 }
 
@@ -396,6 +405,37 @@ namespace EasyReloadGuard.Editor
                 });
             }
         }
+
+        /// <summary>
+        /// [ReloadSafe] 只在声明时复核过，之后新增的会话内写入会被它掩盖（RG015）：声明保留的字段在类型初始化以外仍有赋值或内容修改时报告。
+        /// 合法的缓存同样会命中，复核后写入基线；基线键带上全部写入位置，位置增减时条目失效，需要重新复核。
+        /// 只统计声明类型内的写入，同一方法内新增的写入不改变证据；程序集级声明视为整体复核，不检查。
+        /// </summary>
+        static void CheckDrift(FieldInfo field, ReloadSafeAttribute safe, AuditReport report)
+        {
+            if (string.IsNullOrWhiteSpace(safe.Reason) || IsImmutableReadonly(field)) return;
+            var usage = FieldAccessAnalyzer.Analyze(field.DeclaringType).Of(field);
+            if (usage == null || usage.Writers.Count == 0 && usage.Mutators.Count == 0) return;
+
+            var name = ReflectionUtil.Describe(field);
+            var sites = new List<string>();
+            if (usage.Writers.Count > 0) sites.Add($"在 {FieldUsage.Names(usage.Writers)} 中赋值");
+            if (usage.Mutators.Count > 0) sites.Add($"在 {FieldUsage.Names(usage.Mutators)} 中修改内容");
+            var scope = usage.Complete ? string.Empty : "（字段非私有，类型外的写入未分析）";
+            report.Findings.Add(new Finding(RuleIds.SafeDrift, Severity.Warning, ReflectionUtil.Subject(field),
+                $"{name} 声明为 [ReloadSafe(\"{safe.Reason}\")]，但{string.Join("、", sites)}{scope}：确认保留下来的值不会让下一会话出错、原因仍然成立后写入基线；" +
+                "原因已不成立时改用 [ResetStatic]/[ResetMethod]。写入位置变化时基线失效，需要重新复核。", baselinable: true)
+            {
+                Member = field,
+                Context = Describe(field.DeclaringType, usage, null),
+                KeyDetail = Evidence(usage),
+            });
+        }
+
+        /// <summary>RG015 的基线证据：完整、排序后的赋值与修改位置（不截断）。</summary>
+        static string Evidence(FieldUsage usage) =>
+            "赋值=" + string.Join(",", usage.Writers.OrderBy(n => n, StringComparer.Ordinal)) +
+            ";修改=" + string.Join(",", usage.Mutators.OrderBy(n => n, StringComparer.Ordinal));
 
         static Finding Legacy(string rule, Severity severity, string subject, string message) =>
             new Finding(rule, severity, subject, message, baselinable: true);
