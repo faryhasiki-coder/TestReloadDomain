@@ -10,6 +10,7 @@ namespace EasyReloadGuard.Editor
     {
         internal static void OnExitingEditMode()
         {
+            if (EditorCompat.PlayModeOptionsMismatch) Log.Warning(EditorCompat.MismatchHint + "。");
             if (!EditorCompat.DomainReloadDisabled) return;
 
             try

@@ -92,11 +92,11 @@ namespace EasyReloadGuard.Editor
             if (ReloadGuardSettings.instance.reloadOnResetFailure)
             {
                 ForceReload.RequestBeforeNextPlay($"{phase}失败");
-                message += "下次进入 Play 前会自动重新加载脚本；需要立即恢复请用 Tools/Easy Reload Guard/重新加载脚本并进入 Play。";
+                message += "下次进入 Play 前会自动重新加载脚本；需要立即恢复请点主工具栏的“重载并 Play”。";
             }
             else
             {
-                message += "可用 Tools/Easy Reload Guard/重新加载脚本并进入 Play 恢复。";
+                message += "可点主工具栏的“重载并 Play”恢复。";
             }
 
             Log.Error(message);

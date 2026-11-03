@@ -103,6 +103,42 @@ namespace EasyReloadGuard.Editor.Tests
         }
 
         [Test]
+        public void ExcludeMarker_FoundInAncestorUpToPackageOrProjectRoot()
+        {
+            var root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ErgMarker_" + System.Guid.NewGuid().ToString("N"));
+            try
+            {
+                var plugin = System.IO.Path.Combine(root, "Assets", "Temp", "Plugin");
+                System.IO.Directory.CreateDirectory(System.IO.Path.Combine(plugin, "Scripts", "Editor"));
+                System.IO.File.WriteAllText(System.IO.Path.Combine(plugin, AuditScope.ExcludeMarkerFileName), "本机插件\n不随项目\n");
+
+                var package = System.IO.Path.Combine(root, "Packages", "com.example");
+                System.IO.Directory.CreateDirectory(System.IO.Path.Combine(package, "Runtime"));
+                System.IO.File.WriteAllText(System.IO.Path.Combine(package, "package.json"), "{}");
+                System.IO.File.WriteAllText(System.IO.Path.Combine(root, "Packages", AuditScope.ExcludeMarkerFileName), "");
+
+                var empty = System.IO.Path.Combine(root, "Assets", "Other");
+                System.IO.Directory.CreateDirectory(empty);
+                System.IO.File.WriteAllText(System.IO.Path.Combine(root, AuditScope.ExcludeMarkerFileName), "");
+
+                var markers = new AuditScope.ExcludeMarkers(root);
+                Assert.IsTrue(markers.TryFind("Assets/Temp/Plugin/Scripts/Editor/Plugin.Editor.asmdef", out var marker));
+                Assert.AreEqual("Assets/Temp/Plugin/：本机插件 不随项目", marker);
+                Assert.IsTrue(markers.TryFind(System.IO.Path.Combine(plugin, "Plugin.dll"), out _), "绝对路径同样查找");
+                Assert.IsFalse(markers.TryFind("Packages/com.example/Runtime/A.asmdef", out _), "包根目录以上的标记不生效");
+                Assert.IsFalse(markers.TryFind("Assets/Other/B.asmdef", out _), "工程根目录的标记不生效");
+
+                System.IO.File.WriteAllText(System.IO.Path.Combine(empty, AuditScope.ExcludeMarkerFileName), "  ");
+                Assert.IsTrue(new AuditScope.ExcludeMarkers(root).TryFind("Assets/Other/B.asmdef", out var noReason));
+                Assert.AreEqual("Assets/Other/：未说明原因", noReason);
+            }
+            finally
+            {
+                if (System.IO.Directory.Exists(root)) System.IO.Directory.Delete(root, true);
+            }
+        }
+
+        [Test]
         public void ResolveType_UsesLoadedAssembliesOnly()
         {
             Assert.AreEqual(typeof(ResetFixture), ReflectionUtil.ResolveType("EasyReloadGuard.Editor.Tests.ResetFixture, EasyReloadGuard.Editor.Tests"));

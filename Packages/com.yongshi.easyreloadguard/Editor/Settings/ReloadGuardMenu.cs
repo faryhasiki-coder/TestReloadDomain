@@ -6,7 +6,7 @@ namespace EasyReloadGuard.Editor
     {
         const string k_Menu = "Tools/Easy Reload Guard/";
 
-        [MenuItem(k_Menu + "运行检查", priority = 0)]
+        [MenuItem(k_Menu + "检查静态变量并查看结果", priority = 0)]
         public static void RunAudit()
         {
             var report = ReloadAudit.Run();
@@ -17,10 +17,10 @@ namespace EasyReloadGuard.Editor
             ReloadGuardSettingsProvider.Open();
         }
 
-        [MenuItem(k_Menu + "设置与报告", priority = 1)]
+        [MenuItem(k_Menu + "打开设置", priority = 1)]
         static void OpenSettings() => ReloadGuardSettingsProvider.Open();
 
-        [MenuItem(k_Menu + "把当前问题记为已知遗留", priority = 40)]
+        /// <summary>只从设置页调用：需要先看过检查结果再决定，不放在菜单中。</summary>
         public static void WriteBaseline()
         {
             if (!EditorUtility.DisplayDialog("记为已知遗留",

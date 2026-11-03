@@ -7,12 +7,15 @@ namespace EasyReloadGuard.Editor
     internal enum PrePlayCheck
     {
         /// <summary>不在进入 Play 前检查（仍可手动或 CLI 检查）。</summary>
+        [InspectorName("不检查")]
         Off,
 
         /// <summary>存在不在遗留清单中的错误时输出警告，仍然进入 Play。</summary>
+        [InspectorName("只输出警告")]
         Warn,
 
         /// <summary>存在不在遗留清单中的错误时阻止进入 Play。</summary>
+        [InspectorName("阻止进入 Play")]
         Block,
     }
 
@@ -20,8 +23,13 @@ namespace EasyReloadGuard.Editor
     [FilePath("ProjectSettings/EasyReloadGuardSettings.asset", FilePathAttribute.Location.ProjectFolder)]
     internal sealed class ReloadGuardSettings : ScriptableSingleton<ReloadGuardSettings>
     {
+        [Tooltip("关闭 Domain Reload 时，进入 Play 前用最近一次检查结果判断：有不在遗留问题清单中的错误时只输出警告，或阻止进入 Play。")]
         public PrePlayCheck prePlayCheck = PrePlayCheck.Warn;
+
+        [Tooltip("进入或退出 Play 时有重置、释放步骤失败，下次进入 Play 前先自动重新加载脚本，避免带着上一次 Play 的数据运行。")]
         public bool reloadOnResetFailure = true;
+
+        [Tooltip("在 Console 输出每次 Play 的重置与释放统计。")]
         public bool verboseLog;
 
         [Tooltip("关闭 Domain Reload 时，每次停止 Play 后检查：静态字段是否还引用已销毁的对象，订阅和集合是否每次 Play 都在增加。")]

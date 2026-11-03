@@ -56,7 +56,7 @@ namespace EasyReloadGuard.Editor
             var lines = new List<string>
             {
                 "# Easy Reload Guard 已知遗留问题清单：这里的问题不阻止进入 Play，但仍列在检查报告末尾。",
-                "# 修复后删除对应行。由 Tools/Easy Reload Guard/把当前问题记为已知遗留 生成，不要手工添加新问题。",
+                "# 修复后删除对应行。由设置页 Project Settings/Easy Reload Guard 的“把当前问题记为已知遗留”生成，不要手工添加新问题。",
                 "# 每行格式：规则编号|程序集|类型.成员（部分行末尾附带写入位置）。以 # 开头的行是说明。",
             };
             var count = 0;
