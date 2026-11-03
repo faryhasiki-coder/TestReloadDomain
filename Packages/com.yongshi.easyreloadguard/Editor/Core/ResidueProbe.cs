@@ -15,8 +15,8 @@ using UnityEngine.SceneManagement;
 namespace EasyReloadGuard.Editor
 {
     /// <summary>
-    /// 退出 Play、回到编辑模式后的残留探测（仅关闭 Domain Reload 时）。读取引擎/编辑器的静态回调列表，以及最近一次检查报告中
-    /// 未处理的静态字段，报告指向已销毁对象的引用与回调，以及跨会话持续增长的订阅和集合。做 Play → Stop → Play 时可直接定位 owner，
+    /// 停止 Play、回到编辑模式后的残留检查（仅关闭 Domain Reload 时）。读取引擎/编辑器的静态回调列表，以及最近一次检查报告中
+    /// 未处理的静态字段，报告指向已销毁对象的引用与回调，以及每次 Play 都在增加的订阅和集合。连续 Play → Stop 时可直接定位负责的代码，
     /// 补足元数据检查看不到的运行时行为（如挂在 UnityEditor 事件上的订阅）。
     /// 读取静态字段会触发尚未执行的静态构造：静态构造经 IL 判定为纯初始化（<see cref="InitializerPurity"/>）的类型照常读取，
     /// 其余有静态构造的项目类型默认跳过（设置“残留探测读取有静态构造的类型”可放开）。
@@ -55,7 +55,7 @@ namespace EasyReloadGuard.Editor
             catch (Exception e)
             {
                 // 工具自身故障不影响编辑器，但必须可见
-                Log.Exception("退出 Play 后的残留探测失败，本次结果未记录。", e);
+                Log.Exception("停止 Play 后的残留检查失败，本次结果未记录。", e);
             }
         }
 
@@ -74,27 +74,27 @@ namespace EasyReloadGuard.Editor
 
             if (result.Count == 0)
             {
-                Log.Verbose($"残留探测（本域第 {s_Returns} 次回到编辑模式）：未发现残留。读取 {current.Read} 个字段，" +
+                Log.Verbose($"停止 Play 后检查（本次脚本加载后第 {s_Returns} 次停止）：没有发现残留。读取 {current.Read} 个字段，" +
                             $"跳过 {current.Skipped} 个（静态构造可能有副作用），无法读取 {current.Unreadable} 个。");
                 return;
             }
 
             var lines = result.Destroyed.Concat(result.Growth).Take(k_ConsoleLines).Select(l => "  " + l);
-            Log.Warning($"残留探测（本域第 {s_Returns} 次回到编辑模式）：已销毁对象引用 {result.Destroyed.Count} 项，" +
-                        $"跨会话增长 {result.Growth.Count} 项。详见 {ReportPath}\n" + string.Join("\n", lines));
+            Log.Warning($"停止 Play 后检查（本次脚本加载后第 {s_Returns} 次停止）：仍引用已销毁对象 {result.Destroyed.Count} 项，" +
+                        $"比上次增加 {result.Growth.Count} 项。详见 {ReportPath}\n" + string.Join("\n", lines));
         }
 
         static IEnumerable<FieldInfo> EngineCallbackFields() =>
             k_EngineTypes.SelectMany(t => t.GetFields(ReflectionUtil.StaticMembers))
                 .Where(f => typeof(Delegate).IsAssignableFrom(f.FieldType) || EditorCompat.IsTrackedEventType(f.FieldType));
 
-        /// <summary>检查报告中未处理（含已基线）以及声明 [ReloadSafe] 但会话中被写入（RG015）的静态字段；已声明重置的字段每次进入 Play 都会恢复，不在探测范围内。</summary>
+        /// <summary>检查报告中未处理（含已知遗留）以及声明 [ReloadSafe] 但在 Play 中被写入的静态字段；已声明重置的字段每次进入 Play 都会恢复，不在检查范围内。</summary>
         static IEnumerable<FieldInfo> ProjectFields(AuditReport audit) =>
             audit == null
                 ? Enumerable.Empty<FieldInfo>()
                 : audit.Findings.Where(f => k_ProbedRules.Contains(f.RuleId)).Select(f => f.Member as FieldInfo).Where(f => f != null);
 
-        /// <summary>已销毁对象的引用总是报告；订阅与集合只在本次比上次回到编辑模式时增长才报告。</summary>
+        /// <summary>已销毁对象的引用总是报告；订阅与集合只在本次比上次停止 Play 时增加才报告。</summary>
         internal static ResidueResult Compare(ResidueSnapshot previous, ResidueSnapshot current)
         {
             var result = new ResidueResult();
@@ -123,17 +123,17 @@ namespace EasyReloadGuard.Editor
         static string ToMarkdown(ResidueResult result, ResidueSnapshot snapshot, bool hasAudit, bool first)
         {
             var sb = new StringBuilder();
-            sb.AppendLine("# Easy Reload Guard 残留探测");
+            sb.AppendLine("# Easy Reload Guard 停止 Play 后检查");
             sb.AppendLine();
             sb.AppendLine($"- 时间：{DateTime.Now:yyyy-MM-dd HH:mm:ss}");
             sb.AppendLine($"- Unity：{Application.unityVersion}");
             sb.AppendLine($"- Enter Play Mode：{EditorCompat.DescribePlayModeOptions()}");
-            sb.AppendLine($"- 本域第 {s_Returns} 次回到编辑模式（会话 #{PlaySession.Id}）" +
-                          (first ? "；首次只检查已销毁对象，增长从第 2 次开始比较" : string.Empty));
+            sb.AppendLine($"- 本次脚本加载后第 {s_Returns} 次停止 Play（第 {PlaySession.Id} 次 Play）" +
+                          (first ? "；第 1 次只检查已销毁对象，从第 2 次开始和上一次比较数量" : string.Empty));
             sb.AppendLine($"- 读取字段 {snapshot.Read} 个，跳过 {snapshot.Skipped} 个（静态构造可能有副作用），无法读取 {snapshot.Unreadable} 个" +
-                          (hasAudit ? string.Empty : "；本域尚未运行检查，只探测了引擎回调，运行检查后可探测项目静态字段"));
-            AppendSection(sb, "已销毁对象的引用", result.Destroyed);
-            AppendSection(sb, "跨会话增长", result.Growth);
+                          (hasAudit ? string.Empty : "；本次脚本加载后还没有运行检查，只检查了引擎回调，运行检查后才会检查项目的静态字段"));
+            AppendSection(sb, "仍引用已销毁的对象", result.Destroyed);
+            AppendSection(sb, "比上次停止时增加", result.Growth);
             return sb.ToString();
         }
 

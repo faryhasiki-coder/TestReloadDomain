@@ -9,10 +9,10 @@ namespace EasyReloadGuard.Editor
         /// <summary>不在进入 Play 前检查（仍可手动或 CLI 检查）。</summary>
         Off,
 
-        /// <summary>存在未基线错误时输出警告并放行。</summary>
+        /// <summary>存在不在遗留清单中的错误时输出警告，仍然进入 Play。</summary>
         Warn,
 
-        /// <summary>存在未基线错误时阻止进入 Play。</summary>
+        /// <summary>存在不在遗留清单中的错误时阻止进入 Play。</summary>
         Block,
     }
 
@@ -24,10 +24,10 @@ namespace EasyReloadGuard.Editor
         public bool reloadOnResetFailure = true;
         public bool verboseLog;
 
-        [Tooltip("关闭 Domain Reload 时，每次退出 Play 回到编辑模式后探测已销毁对象的引用与跨会话增长的订阅/集合。")]
+        [Tooltip("关闭 Domain Reload 时，每次停止 Play 后检查：静态字段是否还引用已销毁的对象，订阅和集合是否每次 Play 都在增加。")]
         public bool residueProbe = true;
 
-        [Tooltip("残留探测也读取静态构造不是纯初始化的项目类型（纯初始化的类型总是读取）。读取会触发尚未执行过的静态构造，可能产生副作用，默认关闭。")]
+        [Tooltip("停止后检查也读取静态构造有副作用的项目类型（只创建集合、字符串、值类型的静态构造总是读取）。读取会触发尚未执行过的静态构造，默认关闭。")]
         public bool residueProbeReadTypeInitializers;
 
         [Tooltip("不参与检查的包名（如 com.unity.render-pipelines.universal）。默认检查 Assets 与全部包。")]

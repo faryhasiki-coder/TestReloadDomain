@@ -24,7 +24,7 @@ namespace EasyReloadGuard.Editor
             if (!TryGetPlan(out var plan)) return;
             var stopwatch = Stopwatch.StartNew();
             for (var i = 0; i < registered.Count; i++)
-                Execute($"PlaySession 登记项 #{i + 1}", registered[i], failures);
+                Execute($"RegisterReset 登记的第 {i + 1} 项", registered[i], failures);
             foreach (var step in plan.FieldSteps) Execute(step.Name, step.Execute, failures);
             foreach (var step in plan.EnterSteps) Execute(step.Name, step.Execute, failures);
             stopwatch.Stop();
@@ -84,19 +84,19 @@ namespace EasyReloadGuard.Editor
         {
             if (failures.Count == 0)
             {
-                Log.Verbose($"会话 #{PlaySession.Id} {phase}：{total} 项完成{detail}。");
+                Log.Verbose($"第 {PlaySession.Id} 次 Play {phase}：{total} 项完成{detail}。");
                 return;
             }
 
-            var message = $"会话 #{PlaySession.Id} {phase}：{failures.Count}/{total} 项失败（{string.Join("、", failures)}），状态可能残留上一会话数据。";
+            var message = $"第 {PlaySession.Id} 次 Play {phase}：{total} 项中 {failures.Count} 项失败（{string.Join("、", failures)}），可能还留着上一次 Play 的数据。";
             if (ReloadGuardSettings.instance.reloadOnResetFailure)
             {
                 ForceReload.RequestBeforeNextPlay($"{phase}失败");
-                message += "下次进入 Play 前将自动重载域；需要立即恢复请用 Tools/Easy Reload Guard/重载域并进入 Play。";
+                message += "下次进入 Play 前会自动重新加载脚本；需要立即恢复请用 Tools/Easy Reload Guard/重新加载脚本并进入 Play。";
             }
             else
             {
-                message += "可用 Tools/Easy Reload Guard/重载域并进入 Play 恢复。";
+                message += "可用 Tools/Easy Reload Guard/重新加载脚本并进入 Play 恢复。";
             }
 
             Log.Error(message);

@@ -33,8 +33,8 @@ namespace EasyReloadGuard
 
     /// <summary>
     /// 进入 Play 时调用的静态无参 void 方法，在全部字段重置之后按 Order 升序执行。方法须幂等且同步完成。
-    /// 声明该方法的类型视为自行管理其全部静态状态（owner 负责）；检查器核对重置方法（含其调用的类型内方法）
-    /// 是否处理了每个可变静态字段（RG014），有意保留的字段用 [ReloadSafe] 说明。
+    /// 声明该方法的类型视为自行管理其全部静态状态；检查器核对重置方法（含其调用的类型内方法）
+    /// 是否处理了每个可变静态字段，漏掉时报告“重置方法漏掉了字段”，有意保留的字段用 [ReloadSafe] 说明。
     /// 业务没有现成的重置入口时，可在该类型中新增只在 Editor 编译的方法：方法连同特性整体放在 #if UNITY_EDITOR 内，
     /// 只把本类型的静态状态恢复为新域首次进入 Play 时的样子，不调用业务流程，也不被业务代码调用。Player 中不存在该方法。
     /// </summary>
@@ -66,7 +66,7 @@ namespace EasyReloadGuard
     }
 
     /// <summary>
-    /// 声明静态状态有意跨 Play 会话保留（如纯计算缓存、编辑器偏好）。必须给出非空原因，检查器会校验。
+    /// 声明静态状态有意保留到下一次 Play（如纯计算缓存、编辑器偏好）。必须给出非空原因，检查器会校验。
     /// </summary>
     [AttributeUsage(
         AttributeTargets.Assembly | AttributeTargets.Class | AttributeTargets.Struct | AttributeTargets.Field,

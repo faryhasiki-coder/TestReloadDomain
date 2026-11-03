@@ -34,7 +34,7 @@ namespace EasyReloadGuard.Editor
             return $"{TypeName(member.DeclaringType)}.{name}";
         }
 
-        /// <summary>稳定标识（基线、去重使用）：程序集|类型.成员。</summary>
+        /// <summary>稳定标识（遗留清单、去重使用）：程序集|类型.成员。</summary>
         public static string Subject(MemberInfo member) =>
             $"{member.DeclaringType.Assembly.GetName().Name}|{TypeName(member.DeclaringType)}.{member.Name}";
 

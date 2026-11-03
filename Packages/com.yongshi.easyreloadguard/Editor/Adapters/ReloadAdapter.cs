@@ -29,7 +29,7 @@ namespace EasyReloadGuard.Editor
 
     /// <summary>
     /// 适配器的声明入口。类型名使用 "Namespace.Type, AssemblyName"（嵌套类型用 +）。
-    /// 找不到类型或成员时报告 RG020 错误，提示目标已升级或改名。
+    /// 找不到类型或成员时报告“适配器找不到目标”错误，提示目标已升级或改名。
     /// </summary>
     public sealed class ReloadAdapterBuilder
     {
@@ -93,7 +93,7 @@ namespace EasyReloadGuard.Editor
         }
 
         /// <summary>
-        /// 登记目标中经复核会影响关闭 Domain Reload 后运行逻辑的静态成员，报告为 RG023 警告（可写入基线）。
+        /// 登记目标中经复核会影响关闭 Domain Reload 后运行逻辑的静态成员，报告为“第三方代码的已知问题”警告（可记为已知遗留）。
         /// 与 <see cref="SelfHandled"/> 搭配：整包其余状态已复核为不影响运行逻辑，这些例外仍需使用方知晓或处理。
         /// </summary>
         public void KnownIssue(string typeName, string memberName, string issue)

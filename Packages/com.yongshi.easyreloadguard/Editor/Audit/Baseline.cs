@@ -6,8 +6,9 @@ using System.Linq;
 namespace EasyReloadGuard.Editor
 {
     /// <summary>
-    /// 遗留问题基线（ProjectSettings/EasyReloadGuardBaseline.txt，纳入版本管理）。
-    /// 基线内的问题不阻断 Play 但仍出现在报告中；新增问题照常阻断。声明错误与适配器问题不可入基线。
+    /// 已知遗留问题清单（ProjectSettings/EasyReloadGuardBaseline.txt，纳入版本管理）。
+    /// 清单内的问题不阻止进入 Play，但仍出现在报告中；新出现的问题照常阻止。特性用错与适配器问题不能记入清单。
+    /// 每行是“规则编号|程序集|类型.成员[|证据]”，由工具生成和比对；文件中按问题类型加注释行，方便人阅读。
     /// </summary>
     internal static class Baseline
     {
@@ -27,8 +28,8 @@ namespace EasyReloadGuard.Editor
         }
 
         /// <summary>
-        /// 按当前基线重新标记每个问题；基线中已不对应任何当前问题的条目报告为提示。
-        /// 适配器问题（RG023）来自按域缓存的重置计划，同一 Finding 会被多次检查复用，因此每次都要写回 true/false。
+        /// 按当前清单重新标记每个问题；清单中已没有对应问题的行报告为提示。
+        /// 适配器登记的已知问题来自按域缓存的重置计划，同一 Finding 会被多次检查复用，因此每次都要写回 true/false。
         /// </summary>
         public static void Apply(AuditReport report, HashSet<string> keys)
         {
@@ -37,28 +38,38 @@ namespace EasyReloadGuard.Editor
                 finding.Baselined = finding.Baselinable && keys.Contains(finding.Key);
 
             foreach (var key in keys.Where(k => !present.Contains(k)).OrderBy(k => k, StringComparer.Ordinal))
-                report.Findings.Add(new Finding(RuleIds.StaleBaseline, Severity.Info, key, "基线条目已不存在对应问题，可删除该行"));
+                report.Findings.Add(new Finding(RuleIds.StaleBaseline, Severity.Info, key, "这一行已没有对应的问题（问题已修复或成员已改名），可以从遗留问题清单中删除"));
         }
 
         public static DateTime LastWriteTimeUtc => File.Exists(FilePath) ? File.GetLastWriteTimeUtc(FilePath) : DateTime.MinValue;
 
         public static int Write(AuditReport report)
         {
-            var keys = report.Findings
+            var groups = report.Findings
                 .Where(f => f.Baselinable && f.Severity != Severity.Info)
-                .Select(f => f.Key)
-                .Distinct()
-                .OrderBy(k => k, StringComparer.Ordinal)
+                .GroupBy(f => f.Key, StringComparer.Ordinal)
+                .Select(g => g.First())
+                .GroupBy(f => f.RuleId)
+                .OrderBy(g => g.Key, StringComparer.Ordinal)
                 .ToList();
 
             var lines = new List<string>
             {
-                "# Easy Reload Guard 基线：已知的遗留静态状态问题，不阻断 Play，但仍出现在检查报告中。",
-                "# 修复后删除对应行。由 Tools/Easy Reload Guard/将当前遗留问题写入基线 生成，不要手工添加新问题。",
+                "# Easy Reload Guard 已知遗留问题清单：这里的问题不阻止进入 Play，但仍列在检查报告末尾。",
+                "# 修复后删除对应行。由 Tools/Easy Reload Guard/把当前问题记为已知遗留 生成，不要手工添加新问题。",
+                "# 每行格式：规则编号|程序集|类型.成员（部分行末尾附带写入位置）。以 # 开头的行是说明。",
             };
-            lines.AddRange(keys);
+            var count = 0;
+            foreach (var group in groups)
+            {
+                lines.Add(string.Empty);
+                lines.Add("# " + RuleIds.Title(group.Key));
+                lines.AddRange(group.Select(f => f.Key).OrderBy(k => k, StringComparer.Ordinal));
+                count += group.Count();
+            }
+
             File.WriteAllLines(FilePath, lines);
-            return keys.Count;
+            return count;
         }
     }
 }

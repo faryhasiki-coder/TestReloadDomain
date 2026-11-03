@@ -18,10 +18,10 @@ namespace EasyReloadGuard.Editor
         public static void RequestBeforeNextPlay(string reason)
         {
             s_PendingReason = string.IsNullOrWhiteSpace(reason) ? "未说明原因" : reason;
-            Log.Warning($"已登记：下次进入 Play 前重载域（{s_PendingReason}）。");
+            Log.Warning($"已登记：下次进入 Play 前先重新加载脚本（{s_PendingReason}）。");
         }
 
-        [MenuItem(k_Menu + "立即重载域", priority = 20)]
+        [MenuItem(k_Menu + "立即重新加载脚本", priority = 20)]
         public static void ReloadNow()
         {
             if (EditorApplication.isPlaying)
@@ -31,17 +31,17 @@ namespace EasyReloadGuard.Editor
                 return;
             }
 
-            Log.Notice("请求重载脚本域。");
+            Log.Notice("请求重新加载脚本。");
             EditorCompat.RequestDomainReload();
         }
 
-        [MenuItem(k_Menu + "重载域并进入 Play", priority = 21)]
+        [MenuItem(k_Menu + "重新加载脚本并进入 Play", priority = 21)]
         static void ReloadAndPlayMenu() => ReloadAndPlay("手动请求");
 
         public static void ReloadAndPlay(string reason)
         {
             SessionState.SetBool(k_EnterPlayAfterReloadKey, true);
-            Log.Notice($"重载脚本域后进入 Play（{reason}）。");
+            Log.Notice($"重新加载脚本后进入 Play（{reason}）。");
             if (EditorApplication.isPlaying)
             {
                 s_ReloadAfterExit = true;

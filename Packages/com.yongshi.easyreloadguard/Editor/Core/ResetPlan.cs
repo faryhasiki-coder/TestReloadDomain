@@ -182,7 +182,7 @@ namespace EasyReloadGuard.Editor
         {
             RequiredReloadReasons.Add(Prefix(source) + reason);
             Findings.Add(new Finding(RuleIds.AdapterRequiresReload, Severity.Info, source,
-                $"关闭 Domain Reload 时，每次进入 Play 前都会强制重载域：{reason}"));
+                $"关闭 Domain Reload 时，每次进入 Play 前都会先重新加载脚本：{reason}"));
         }
 
         internal void ApplyAdapter(Type adapterType, IReadOnlyDictionary<string, string> packageVersions)
