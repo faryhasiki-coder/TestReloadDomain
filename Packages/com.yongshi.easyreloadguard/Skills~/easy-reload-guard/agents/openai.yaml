@@ -1,0 +1,4 @@
+interface:
+  display_name: "Easy Reload Guard 约束"
+  short_description: "关闭 Domain Reload 时，静态状态、事件、异步与适配器的写法约束和验证方法"
+  default_prompt: "使用 $easy-reload-guard，检查我这次改动中新增或修改的静态状态是否符合 Easy Reload Guard 的约束，并说明需要怎样验证。"

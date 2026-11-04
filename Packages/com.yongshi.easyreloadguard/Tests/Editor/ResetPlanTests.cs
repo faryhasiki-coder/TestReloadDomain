@@ -282,12 +282,23 @@ namespace EasyReloadGuard.Editor.Tests
         [Test]
         public void Adapter_UnverifiedVersionWarnsButStillApplies()
         {
-            var plan = Plan(p => p.ApplyAdapter(typeof(UnverifiedAdapter), NoPackages));
+            var plan = Plan(p => p.ApplyAdapter(typeof(UnverifiedAdapter), NoPackages, builtIn: true));
             var status = plan.Adapters.Single();
 
             Assert.IsFalse(status.Verified);
             Assert.IsTrue(plan.IsSelfHandled(status.Target));
             Assert.IsTrue(plan.Findings.Any(f => f.RuleId == RuleIds.AdapterUnverified && f.Severity == Severity.Warning));
+        }
+
+        [Test]
+        public void Adapter_ProjectAdapterDoesNotCompareVersions()
+        {
+            var plan = Plan(p => p.ApplyAdapter(typeof(UnverifiedAdapter), NoPackages));
+            var status = plan.Adapters.Single();
+
+            Assert.IsFalse(status.BuiltIn);
+            Assert.IsFalse(plan.Findings.Any(f => f.RuleId == RuleIds.AdapterUnverified));
+            Assert.AreSame(status, plan.ProjectSelfHandler(status.Target), "SelfHandled 的程序集交给静态字段比对");
         }
 
         [Test]
@@ -299,7 +310,46 @@ namespace EasyReloadGuard.Editor.Tests
             Assert.IsEmpty(plan.Findings);
         }
 
-        static readonly IReadOnlyDictionary<string, string> NoPackages = new Dictionary<string, string>();
+        [Test]
+        public void InstalledPackage_DescribesSource()
+        {
+            var git = new InstalledPackage("1.0.0", "Git", "1.1.69", "70699041c85434b2ea7988df51c4b47052d484ed");
+            StringAssert.Contains("1.1.69", git.Describe());
+            StringAssert.Contains("70699041", git.Describe());
+            StringAssert.Contains("嵌入", new InstalledPackage("1.0.0", "Embedded", null, null).Describe());
+            Assert.AreEqual("17.3.0", new InstalledPackage("17.3.0", "Registry", null, null).Describe());
+        }
+
+        [Test]
+        public void AdapterReview_SignaturesSkipConstantsAndCompilerCaches()
+        {
+            var signatures = AdapterReview.Signatures(typeof(ReviewFixture));
+            CollectionAssert.AreEqual(new[]
+            {
+                "<Current>k__BackingField:String",
+                "s_Map:Dictionary<String,List<Int32>> readonly",
+                "s_Values:Int32[]",
+            }, signatures);
+        }
+
+        [Test]
+        public void AdapterReview_ReportsDifferenceFromRecordedLine()
+        {
+            var subject = ReflectionUtil.Subject(typeof(ReviewFixture));
+            var prefix = RuleIds.AdapterReviewChanged + "|" + subject;
+            var baseline = new HashSet<string> { prefix + "|字段=s_Old:Int32;s_Values:Int32[]" };
+
+            var previous = AdapterReview.Previous(baseline, prefix);
+            CollectionAssert.AreEquivalent(new[] { "s_Old:Int32", "s_Values:Int32[]" }, previous);
+            Assert.IsNull(AdapterReview.Previous(new HashSet<string>(), prefix));
+
+            var message = AdapterReview.Describe("A", "HandlesType", AdapterReview.Signatures(typeof(ReviewFixture)), previous);
+            StringAssert.Contains("删除 s_Old:Int32", message);
+            StringAssert.Contains("s_Map", message);
+            StringAssert.DoesNotContain("s_Values", message, "没变的字段不列出");
+        }
+
+        static readonly IReadOnlyDictionary<string, InstalledPackage> NoPackages = new Dictionary<string, InstalledPackage>();
 
         static readonly FieldInfo k_Initial = typeof(FieldResetStep).GetField("m_Initial", BindingFlags.Instance | BindingFlags.NonPublic);
 

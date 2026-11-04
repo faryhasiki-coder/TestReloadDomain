@@ -22,6 +22,8 @@ namespace EasyReloadGuard.Editor
         bool m_ShowExit = true;
         bool m_ShowScope;
         bool m_ShowLog;
+        bool m_ShowSkill = ReloadGuardSkillInstaller.Targets.Any(t =>
+            t.ToolPresent && ReloadGuardSkillInstaller.GetStatus(t) != ReloadGuardSkillInstaller.SkillStatus.UpToDate);
         bool m_ShowScanned;
         bool m_ShowAdapters;
         readonly Dictionary<string, bool> m_GroupExpanded = new Dictionary<string, bool>();
@@ -119,8 +121,49 @@ namespace EasyReloadGuard.Editor
 
             m_ShowLog = Section(m_ShowLog, "日志", () => Field(nameof(ReloadGuardSettings.verboseLog), "详细日志"));
 
+            m_ShowSkill = Section(m_ShowSkill, "Agent Skill", DrawSkill);
+
             // 只按属性是否改动判断：展开或折叠分组也会置 GUI.changed，不能因此丢弃检查结果
             if (m_Settings.ApplyModifiedPropertiesWithoutUndo()) ReloadGuardSettings.instance.SaveAndInvalidate();
+        }
+
+        /// <summary>Claude Code 与 Codex 的 Skill 安装状态；安装只复制文件，不需要结束本次布局。</summary>
+        static void DrawSkill()
+        {
+            EditorGUILayout.LabelField(
+                $"把本包的约束（{ReloadGuardSkillInstaller.SkillName}）安装到 Agent 的用户 Skill 目录，写代码时自动遵守。包升级后 Skill 内容有变化时，这里会提示重新安装。",
+                EditorStyles.wordWrappedMiniLabel);
+            foreach (var target in ReloadGuardSkillInstaller.Targets)
+            {
+                var status = ReloadGuardSkillInstaller.GetStatus(target);
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    GUILayout.Label(target.Name, GUILayout.Width(90));
+                    switch (status)
+                    {
+                        case ReloadGuardSkillInstaller.SkillStatus.UpToDate:
+                            ReloadGuardStyles.DrawPill("已是最新", ReloadGuardStyles.Good);
+                            break;
+                        case ReloadGuardSkillInstaller.SkillStatus.Outdated:
+                            ReloadGuardStyles.DrawPill("有更新", ReloadGuardStyles.Caution);
+                            break;
+                        case ReloadGuardSkillInstaller.SkillStatus.NotManaged:
+                            ReloadGuardStyles.DrawPill("同名目录不是本包安装的", ReloadGuardStyles.Caution);
+                            break;
+                        default:
+                            ReloadGuardStyles.DrawPill(target.ToolPresent ? "未安装" : "未安装（本机未发现该工具）", ReloadGuardStyles.Neutral);
+                            break;
+                    }
+
+                    GUILayout.FlexibleSpace();
+                    using (new EditorGUI.DisabledScope(status == ReloadGuardSkillInstaller.SkillStatus.NotManaged))
+                    {
+                        var label = status == ReloadGuardSkillInstaller.SkillStatus.UpToDate ? "重新安装" : "安装";
+                        if (GUILayout.Button(new GUIContent(label, target.Directory), EditorStyles.miniButton, GUILayout.Width(70)))
+                            ReloadGuardSkillInstaller.Install(target);
+                    }
+                }
+            }
         }
 
         /// <summary>可折叠的卡片分组。不用 BeginFoldoutHeaderGroup：其中的列表字段会再画一个折叠标题，Unity 不允许嵌套。</summary>
@@ -243,8 +286,11 @@ namespace EasyReloadGuard.Editor
                         using (new EditorGUILayout.HorizontalScope())
                         {
                             EditorGUILayout.LabelField($"{adapter.Target} {adapter.InstalledVersion}", EditorStyles.miniLabel);
-                            ReloadGuardStyles.DrawPill(adapter.Verified ? "版本已复核" : "版本未复核",
-                                adapter.Verified ? ReloadGuardStyles.Good : ReloadGuardStyles.Caution);
+                            if (!adapter.BuiltIn)
+                                ReloadGuardStyles.DrawPill("比对静态字段", ReloadGuardStyles.Neutral, "跳过检查的代码中静态字段有变化时提醒复核，不比对版本号");
+                            else
+                                ReloadGuardStyles.DrawPill(adapter.Verified ? "版本已复核" : "版本未复核",
+                                    adapter.Verified ? ReloadGuardStyles.Good : ReloadGuardStyles.Caution);
                         }
                     }
                 }

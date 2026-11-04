@@ -38,7 +38,9 @@ namespace EasyReloadGuard.Editor
             foreach (var assembly in AuditScope.Resolve(ReloadGuardSettings.instance, plan, report))
                 ScanAssembly(assembly, plan, report);
             s_BaselineWriteTime = Baseline.LastWriteTimeUtc;
-            Baseline.Apply(report, Baseline.Load());
+            var baseline = Baseline.Load();
+            AdapterReview.Check(plan, report, baseline);
+            Baseline.Apply(report, baseline);
             report.Sort();
             WriteReport(report, DefaultReportPath);
             s_Last = report;

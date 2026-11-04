@@ -22,6 +22,9 @@ namespace EasyReloadGuard.Editor
         public List<string> ScannedAssemblies { get; } = new List<string>();
         public List<string> SelfHandledAssemblies { get; } = new List<string>();
 
+        /// <summary>由项目适配器声明自行处理（SelfHandled）而跳过的程序集 → 声明它的适配器。检查器记录其中的静态字段，变化时提醒复核。</summary>
+        public SortedDictionary<string, AdapterStatus> ReviewedAssemblies { get; } = new SortedDictionary<string, AdapterStatus>(StringComparer.Ordinal);
+
         /// <summary>所在目录放了排除标记、因此跳过的程序集 → “标记目录：原因”。</summary>
         public SortedDictionary<string, string> MarkerExcludedAssemblies { get; } = new SortedDictionary<string, string>(StringComparer.Ordinal);
         public List<string> LegacySelfResetTypes { get; } = new List<string>();
@@ -70,12 +73,12 @@ namespace EasyReloadGuard.Editor
             sb.AppendLine();
             sb.AppendLine("## 第三方包与 DLL 的适配器");
             sb.AppendLine();
-            sb.AppendLine("| 适配器 | 处理的包或程序集 | 已安装版本 | 版本已复核 | 不需要处理的依据 |");
+            sb.AppendLine("| 适配器 | 处理的包或程序集 | 已安装版本 | 复核方式 | 不需要处理的依据 |");
             sb.AppendLine("| --- | --- | --- | --- | --- |");
             foreach (var adapter in Plan.Adapters)
             {
                 sb.AppendLine($"| {adapter.Name} | {adapter.Target} | {adapter.InstalledVersion ?? "未安装（不生效）"} | " +
-                              $"{(adapter.Active ? adapter.Verified ? "是" : "否" : "-")} | {adapter.SelfHandledEvidence ?? "-"} |");
+                              $"{(!adapter.Active ? "-" : !adapter.BuiltIn ? "比对静态字段" : adapter.Verified ? "版本已复核" : "版本未复核")} | {adapter.SelfHandledEvidence ?? "-"} |");
             }
 
             AppendWorkList(sb);

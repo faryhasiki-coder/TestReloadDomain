@@ -78,6 +78,8 @@ namespace EasyReloadGuard.Editor
                 if (plan.IsSelfHandled(name) || (package != null && plan.IsSelfHandled(package)))
                 {
                     if (!report.SelfHandledAssemblies.Contains(name)) report.SelfHandledAssemblies.Add(name);
+                    var handler = plan.ProjectSelfHandler(name) ?? (package != null ? plan.ProjectSelfHandler(package) : null);
+                    if (handler != null) report.ReviewedAssemblies[name] = handler;
                     return;
                 }
 
