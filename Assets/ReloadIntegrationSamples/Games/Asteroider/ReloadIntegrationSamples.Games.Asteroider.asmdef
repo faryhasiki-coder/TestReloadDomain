@@ -1,0 +1,17 @@
+{
+    "name": "ReloadIntegrationSamples.Games.Asteroider",
+    "rootNamespace": "",
+    "references": [
+        "Unity.InputSystem",
+        "EasyReloadGuard"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

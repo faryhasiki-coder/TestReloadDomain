@@ -2,7 +2,7 @@
 
 [返回实战案例测试集](../../TestCases/README.md) · [完整案例与适配器方案](../../TestCases/Cases/01-UniTask.md)
 
-日期：2026-10-22。Unity 6000.3.8f1 / Windows Editor / UniTask 2.5.11。
+日期：2026-10-22。当时运行于 Unity 6000.3.8f1 / Windows Editor / UniTask 2.5.11；测试本身适用于 6000.3.x，不限定小版本。
 
 **当前分支本轮 5 项原生包测试：4 通过、1 失败。连续 Fast Play 的编辑器回调累积尚未解决。**
 
@@ -35,7 +35,7 @@ NUnit 分类含 `Case.UniTask`、`Scenario.*`；UT-03 另有 `Regression.KnownFa
 
 [UniTask 2.5.11 PlayerLoopHelper](https://github.com/Cysharp/UniTask/blob/2.5.11/src/UniTask/Assets/Plugins/UniTask/Runtime/PlayerLoopHelper.cs) 的 InsertRunner 会注册捕获 runner/queue 的匿名 EditorApplication.playModeStateChanged 回调。当前只读探针观测到每轮 Fast Play 增加 16 个；未测进程内存或性能损耗。
 
-探针限定 Unity 6000.3.8f1，只读取事件存储，不移除或修改供应商回调。升级 Unity 必须复核探针。
+探针只读取事件存储，不移除或修改供应商回调；不限定小版本（6000.3.1f1 与 6000.3.8f1 的 `UnityEditor.CoreModule` 均含所读字段）。内部结构变化时，测试会报出缺失的字段名，需要复核。
 
 本轮后执行的正常 Domain Reload 基线测试把观测恢复为 16。恢复不等于修复；3 轮 Fast Play 中间没有插入重载。原 Play Sessions 的 Force Script Reload 菜单当前分支不存在。
 

@@ -5,7 +5,7 @@
 - [仓库](https://github.com/striderzz/Snake-Game-Unity-Project)，MIT，提交 `95e45d8d4b6c35998b05df4588063244b50a30c6`。
 - 完整本地工程：[outputs/test-cases/projects/Snake](../../outputs/test-cases/projects/Snake/)。
 - 场景：[Level.unity](../../outputs/test-cases/projects/Snake/Assets/Scenes/Level.unity)、[Menu.unity](../../outputs/test-cases/projects/Snake/Assets/Scenes/Menu.unity)。
-- 原 Unity 6000.2.2f1 / URP 17.2.0；本工程为 6000.3.8f1 / URP 17.3.0，差异需要在独立副本核验。
+- 原 Unity 6000.2.2f1 / URP 17.2.0；本工程为 6000.3.x / URP 17.3.0，差异需要在独立副本核验。
 - 当前状态：完整源码与许可证已下载，**未接入、未运行**。这是 GitHub 补充筛选的案例，并非此前 B 站贪吃蛇教程的配套仓库。
 
 用途：网格驱动的 3D 贪吃蛇，食物增长、尖刺与墙体碰撞、死亡时添加物理组件、重开场景。
