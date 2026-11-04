@@ -127,6 +127,17 @@ namespace EasyReloadGuard.Editor.Tests
         static void Reset() => Value = 0;
     }
 
+    /// <summary>适配器复核签名：常量、lambda 缓存不计，自动属性的 backing field 计入。</summary>
+    static class ReviewFixture
+    {
+        const int k_Const = 1;
+        static readonly System.Collections.Generic.Dictionary<string, System.Collections.Generic.List<int>> s_Map =
+            new System.Collections.Generic.Dictionary<string, System.Collections.Generic.List<int>>();
+        static int[] s_Values;
+        public static string Current { get; set; }
+        static System.Func<int> Lambda => () => k_Const + s_Values.Length + s_Map.Count;
+    }
+
     abstract class TestAdapterBase : ReloadAdapter
     {
         public override string Target => typeof(TestAdapterBase).Assembly.GetName().Name;

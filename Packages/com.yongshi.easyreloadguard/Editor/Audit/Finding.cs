@@ -27,6 +27,7 @@ namespace EasyReloadGuard.Editor
         public const string AdapterUnverified = "RG021";
         public const string AdapterRequiresReload = "RG022";
         public const string AdapterKnownIssue = "RG023";
+        public const string AdapterReviewChanged = "RG024";
         public const string StaleBaseline = "RG030";
         public const string ScanFailed = "RG040";
 
@@ -51,6 +52,7 @@ namespace EasyReloadGuard.Editor
                 case AdapterUnverified: return "适配器目标的版本未复核";
                 case AdapterRequiresReload: return "适配器要求进入 Play 前重新加载脚本";
                 case AdapterKnownIssue: return "第三方代码的已知问题";
+                case AdapterReviewChanged: return "跳过检查的代码中静态字段有变化";
                 case StaleBaseline: return "遗留问题清单中的过期行";
                 case ScanFailed: return "无法分析的类型";
                 default: return ruleId;

@@ -8,6 +8,8 @@
 
 处理某份检查报告时，请看[接入手册](Documentation~/接入手册.md)：其中说明了每类问题该谁改、怎么改，以及改完后如何证明。版本变化和验证记录见 [CHANGELOG](CHANGELOG.md)。
 
+用 Agent 写代码时，在 `Project Settings/Easy Reload Guard` 的“Agent Skill”分组中安装 Skill（或菜单 `Tools/Easy Reload Guard/安装或更新 Agent Skill`），Agent 会按本包的约束处理静态状态。Agent 定位本包代码见 [AGENTS.md](AGENTS.md)。
+
 ---
 
 ## 1. 关闭 Domain Reload 后会发生什么
@@ -129,7 +131,8 @@ public static class ProfileLoader
 | 重置方法漏掉了字段 | 警告 | 类型有 `[ResetMethod]`，但某个字段没有被它处理 | 能 |
 | 声明保留的字段仍在 Play 中被修改 | 警告 | 加了 `[ReloadSafe]` 的字段在静态初始化以外仍被修改，需要确认原因是否还成立。清单中会记下修改的位置，位置增减后需要重新确认 | 能 |
 | 适配器找不到目标 | 错误 | 适配器引用的类型或成员不存在（目标升级或改名） | 不能，必须修 |
-| 适配器目标的版本未复核 | 警告 | 已安装版本不在适配器的复核列表中 | 不能，复核后追加版本 |
+| 适配器目标的版本未复核 | 警告 | 只用于本包内置的适配器：已安装的官方包版本不在复核列表中 | 不能，升级本包或联系本包维护者 |
+| 跳过检查的代码中静态字段有变化 | 警告 | 项目适配器用 `HandlesType` / `SelfHandled` 跳过的类型，静态字段与上次记为已知遗留时不同（第一次检查时也会出现） | 能（复核后记为已知遗留） |
 | 适配器要求进入 Play 前重新加载脚本 | 提示 | 适配器声明了兜底重新加载 | — |
 | 第三方代码的已知问题 | 警告 | 适配器复核出的、会影响运行的包内静态状态 | 能 |
 | 遗留问题清单中的过期行 | 提示 | 清单中的某行已没有对应问题，可以删除 | — |
@@ -189,7 +192,7 @@ using EasyReloadGuard.Editor;
 sealed class SomeSdkAdapter : ReloadAdapter
 {
     public override string Target => "com.vendor.sdk";                    // 包名
-    public override string[] VerifiedVersions => new[] { "3.2.1" };      // 人工复核过的版本
+    public override string[] VerifiedVersions => new[] { "3.2.1" };      // 复核时的版本，只作记录，可以不写
     public override void Configure(ReloadAdapterBuilder b)
     {
         b.ResetField("Vendor.Sdk.Core, Vendor.Sdk", "s_Instance");            // 私有字段也可以
@@ -204,13 +207,18 @@ sealed class SomeSdkAdapter : ReloadAdapter
 
 - 目标包没有安装时，适配器不生效。
 - 也可以给业务程序集写适配器：`TargetKind => AdapterTargetKind.Assembly`，`Target` 填程序集名（asmdef 程序集的版本为 `0.0.0.0`）。适配器所在的 Editor 程序集可以直接引用业务程序集，用 `typeof(...)` 写类型名。
-- 目标升级后，版本不在 `VerifiedVersions` 中时会报告警告，复核后追加版本即可；类型或成员被改名、删除时报告错误，不会悄悄失效。
+- **包更新后怎么发现要重新复核**：项目适配器不比对版本号（基于包开发的项目包更新频繁，又常用 Git tag 发版而不改 `package.json`，版本号既会在无关更新时误报，又会在不改版本时漏报）。按包更新后的情况分别处理：
+  - `ResetField`、`InvokeOnReset`、`InvokeOnExitPlayMode`、`KnownIssue` 引用的类型或成员被改名、删除：报“适配器找不到目标”错误，必须修。
+  - 用 `HandlesType`、`SelfHandled` 跳过检查的代码：检查器记录其中每个类型的静态字段（名称、类型、是否只读），报“跳过检查的代码中静态字段有变化”警告。第一次出现时，确认这些字段不影响下一次 Play 后记为已知遗留；之后字段有增删或类型变化，原来那一行失效，报告列出与上次记录相比新增、删除的字段，只需复核这几个。包更新没有动到静态字段时，什么都不报。
+  - 只比对字段定义，不比对方法体：字段没变、读写方式变了的情况，依靠停止后检查发现。
+  - 其余没有声明的代码每次都会重新扫描，新问题照常报告。
+- `VerifiedVersions` 只作记录，可以不写。内置适配器针对 Unity 官方发布的包，仍按 `package.json` 版本比对；版本不在列表中时报“适配器目标的版本未复核”，需要升级本包或联系本包维护者。
 
 DLL 按以下顺序尝试，前一种不可行时再用下一种：
 
 1. **先看报告**：DLL 默认在扫描范围内，报告会列出其中的静态状态。
-2. **写适配器**：`TargetKind => AdapterTargetKind.Assembly`，`Target` 填程序集名，`VerifiedVersions` 填程序集版本，再用 `ResetField` / `InvokeOnReset` / `InvokeOnExitPlayMode` 处理私有静态字段或调用它自带的清理方法。DLL 更新后版本变化，会提醒重新复核。
-3. **确认不需要处理**：`HandlesType(类型, 依据)` 或 `SelfHandled(依据)`。
+2. **写适配器**：`TargetKind => AdapterTargetKind.Assembly`，`Target` 填程序集名，再用 `ResetField` / `InvokeOnReset` / `InvokeOnExitPlayMode` 处理私有静态字段或调用它自带的清理方法。DLL 更新后成员没了会报错。
+3. **确认不需要处理**：`HandlesType(类型, 依据)` 或 `SelfHandled(依据)`。DLL 更新后静态字段有变化时会提醒重新复核。
 4. **兜底**：`b.RequireDomainReload("原因")`。关闭 Domain Reload 时，每次进入 Play 前都会先重新加载脚本，相当于只为这个 DLL 恢复了 Domain Reload。
 5. **运行中发现问题**：项目自己的 Editor 工具或调试代码调用 `PlaySession.RequestDomainReload("原因")`，下次进入 Play 前重新加载脚本。不要为此在业务流程中加判断。
 
@@ -240,6 +248,8 @@ DLL 按以下顺序尝试，前一种不可行时再用下一种：
 | `Tools/Easy Reload Guard/立即重新加载脚本` | Play 中会先停止，再调用 `EditorUtility.RequestScriptReload()` |
 | `Tools/Easy Reload Guard/重新加载脚本并进入 Play` | 重新加载完成后自动进入 Play |
 | 主工具栏 Play 按钮旁的“重载并 Play” | 同上；右键可只重新加载脚本或打开设置页。第一次加载本包时自动显示（每人每工程一次），之后可在工具栏右键菜单 `Easy Reload Guard` 中隐藏或重新显示 |
+
+主工具栏上还有一个 Domain Reload 状态图标：**绿色闪电**表示 Domain Reload 已关闭（进入 Play 快），**黄色闪电**表示已开启（常规，每次进入 Play 都重新加载脚本）。按 Unity 实际使用的 `EditorSettings.asset` 序列化开关判断；接口与序列化开关不一致时显示黄色，悬停提示中说明原因。设置改变后约 1 秒内刷新。点击打开 Enter Play Mode 设置，右键打开本包设置；显示和隐藏方式与“重载并 Play”相同。
 | `ForceReload.RequestBeforeNextPlay(reason)`（Editor） | 下次进入 Play 时先取消，重新加载后再进入 |
 | `PlaySession.RequestDomainReload(reason)`（运行时代码中调用，Player 中会被编译器删除） | 同上 |
 | 重置或释放失败、适配器 `RequireDomainReload` | 自动登记 |
@@ -268,7 +278,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File Tools/UnityCI/Run-UnityTests
 
 1. 复核 `Editor/Core/EditorCompat.cs`：所有和 Unity 版本相关的调用（读取 Enter Play Mode 设置及其序列化字段、在 ExitingEditMode 中取消进入 Play、`RequestScriptReload`、查询包版本）都集中在这个文件。
 2. 运行 `Tools/UnityCI/Run-UnityTests.ps1`（或在 Test Runner → EditMode 中运行 `EasyReloadGuard.Editor.Tests` 和 `DomainReloadCases.Tests`）。嵌入式包的测试默认可见，不需要配置 `testables`。
-3. 运行检查，处理“适配器找不到目标”和“适配器目标的版本未复核”（内置适配器对应的包可能也随 Unity 升级了）。
+3. 运行检查，处理“适配器找不到目标”“跳过检查的代码中静态字段有变化”和“适配器目标的版本未复核”（内置适配器对应的包可能也随 Unity 升级了）。
 4. 关闭 Domain Reload，连续 Play → Stop 至少 3 次，确认 Console 中没有 `[Easy Reload Guard]` 错误。
 5. 新版 Unity 如果提供了官方的同类机制，用适配器接入或替换 `ResetPipeline` 的执行时机即可，业务代码上的特性保持不变。
 
@@ -309,3 +319,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -File Tools/UnityCI/Run-UnityTests
 | RG014 | 重置方法漏掉了字段 |
 | RG015 | 声明保留的字段仍在 Play 中被修改（行末附带修改位置） |
 | RG023 | 第三方代码的已知问题 |
+| RG024 | 跳过检查的代码中静态字段有变化（行末附带复核时的字段） |

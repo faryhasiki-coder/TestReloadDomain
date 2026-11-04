@@ -97,12 +97,17 @@ namespace EasyReloadGuard.Editor
             return false;
         }
 
-        public static Dictionary<string, string> GetRegisteredPackageVersions()
+        /// <summary>已登记的包：package.json 版本，以及 Git 来源时 manifest 中的 tag（或分支、提交号）与实际解析的提交号。</summary>
+        public static Dictionary<string, InstalledPackage> GetRegisteredPackages()
         {
-            var versions = new Dictionary<string, string>(StringComparer.Ordinal);
+            var packages = new Dictionary<string, InstalledPackage>(StringComparer.Ordinal);
             foreach (var package in UnityEditor.PackageManager.PackageInfo.GetAllRegisteredPackages())
-                versions[package.name] = package.version;
-            return versions;
+            {
+                var git = package.source == UnityEditor.PackageManager.PackageSource.Git ? package.git : null;
+                packages[package.name] = new InstalledPackage(package.version, package.source.ToString(), git?.revision, git?.hash);
+            }
+
+            return packages;
         }
 
         const BindingFlags k_Instance = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;

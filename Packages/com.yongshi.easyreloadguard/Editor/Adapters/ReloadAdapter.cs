@@ -13,7 +13,9 @@ namespace EasyReloadGuard.Editor
 
     /// <summary>
     /// 为无法修改源码的 UPM 包或 DLL 声明 Domain Reload 处理方式。放在任意 Editor 程序集中，
-    /// 需要公开无参构造；目标不存在时休眠，版本不在 <see cref="VerifiedVersions"/> 中时报告警告。
+    /// 需要公开无参构造；目标不存在时休眠。用 HandlesType / SelfHandled 跳过检查的代码，检查器会记录其中的静态字段，
+    /// 静态字段变化时报告“跳过检查的代码中静态字段有变化”，提醒重新复核（不按版本号判断：基于包开发的项目包更新频繁，
+    /// 且常用 Git tag 发版而不改 package.json）。
     /// </summary>
     public abstract class ReloadAdapter
     {
@@ -21,8 +23,11 @@ namespace EasyReloadGuard.Editor
 
         public virtual AdapterTargetKind TargetKind => AdapterTargetKind.Package;
 
-        /// <summary>已人工复核过的目标版本。升级目标后必须复核并追加，检查器以此提示迁移。</summary>
-        public abstract string[] VerifiedVersions { get; }
+        /// <summary>
+        /// 复核时的目标版本，只作记录，项目适配器不再按它判断是否需要重新复核（改为比对静态字段，见类型说明）。
+        /// 本包内置的适配器针对 Unity 官方发布的包，仍按 package.json 版本比对。
+        /// </summary>
+        public virtual string[] VerifiedVersions => Array.Empty<string>();
 
         public abstract void Configure(ReloadAdapterBuilder builder);
     }
@@ -49,7 +54,7 @@ namespace EasyReloadGuard.Editor
         {
             if (!RequireText(evidence, nameof(SelfHandled))) return;
             m_Status.SelfHandledEvidence = evidence;
-            m_Plan.MarkSelfHandled(m_Status.Target);
+            m_Plan.MarkSelfHandled(m_Status.Target, m_Status);
         }
 
         /// <summary>进入 Play 时重置目标的静态字段；fieldName 也可写自动属性名。</summary>
@@ -89,7 +94,7 @@ namespace EasyReloadGuard.Editor
         {
             if (!RequireText(evidence, nameof(HandlesType))) return;
             var type = Resolve(typeName);
-            if (type != null) m_Plan.MarkOwnerManaged(type);
+            if (type != null) m_Plan.MarkOwnerManaged(type, m_Status, evidence);
         }
 
         /// <summary>
@@ -153,14 +158,46 @@ namespace EasyReloadGuard.Editor
                 message + "。目标可能已升级或改名，请复核适配器"));
     }
 
+    /// <summary>已安装的包。Git 来源时 Revision 为 manifest 中 # 后的 tag、分支或提交号，Hash 为实际解析的提交号。</summary>
+    internal readonly struct InstalledPackage
+    {
+        public InstalledPackage(string version, string source, string revision, string hash)
+        {
+            Version = version;
+            Source = source;
+            Revision = string.IsNullOrEmpty(revision) ? null : revision;
+            Hash = string.IsNullOrEmpty(hash) ? null : hash;
+        }
+
+        public string Version { get; }
+        public string Source { get; }
+        public string Revision { get; }
+        public string Hash { get; }
+        public bool IsGit => Hash != null || Revision != null;
+
+        /// <summary>报告中显示的版本。</summary>
+        public string Describe()
+        {
+            if (IsGit)
+                return $"Git {Revision ?? "（未指定）"}（提交 {Short(Hash)}，package.json {Version}）";
+            return Source == "Embedded" ? $"{Version}（嵌入）" : Version;
+        }
+
+        static string Short(string hash) => hash == null ? "未知" : hash.Length > 8 ? hash.Substring(0, 8) : hash;
+    }
+
     internal sealed class AdapterStatus
     {
-        public AdapterStatus(string name, string target, AdapterTargetKind kind)
+        public AdapterStatus(string name, string target, AdapterTargetKind kind, bool builtIn)
         {
             Name = name;
             Target = target;
             Kind = kind;
+            BuiltIn = builtIn;
         }
+
+        /// <summary>本包内置的适配器：按版本号复核；项目适配器按静态字段比对。</summary>
+        public bool BuiltIn { get; }
 
         public string Name { get; }
         public string Target { get; }

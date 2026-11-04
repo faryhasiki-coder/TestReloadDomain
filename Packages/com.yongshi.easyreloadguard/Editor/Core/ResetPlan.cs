@@ -23,7 +23,11 @@ namespace EasyReloadGuard.Editor
 
         readonly HashSet<string> m_HandledFields = new HashSet<string>(StringComparer.Ordinal);
         readonly HashSet<Type> m_ManagedTypes = new HashSet<Type>();
-        readonly HashSet<string> m_SelfHandledTargets = new HashSet<string>(StringComparer.Ordinal);
+        readonly Dictionary<string, AdapterStatus> m_SelfHandledTargets = new Dictionary<string, AdapterStatus>(StringComparer.Ordinal);
+
+        /// <summary>项目适配器用 HandlesType 跳过检查的类型、声明它的适配器与依据。检查器记录其中的静态字段，变化时提醒复核。</summary>
+        public readonly List<(Type Type, AdapterStatus Adapter, string Evidence)> ReviewedTypes =
+            new List<(Type, AdapterStatus, string)>();
 
         public static ResetPlan Current => s_Current ?? (s_Current = BuildFromProject());
 
@@ -31,7 +35,11 @@ namespace EasyReloadGuard.Editor
 
         public bool IsOwnerManaged(Type type) => m_ManagedTypes.Contains(type);
 
-        public bool IsSelfHandled(string target) => m_SelfHandledTargets.Contains(target);
+        public bool IsSelfHandled(string target) => m_SelfHandledTargets.ContainsKey(target);
+
+        /// <summary>声明该包或程序集自行处理的项目适配器；内置适配器或未声明时为 null。</summary>
+        public AdapterStatus ProjectSelfHandler(string target) =>
+            m_SelfHandledTargets.TryGetValue(target, out var status) && !status.BuiltIn ? status : null;
 
         static ResetPlan BuildFromProject()
         {
@@ -44,11 +52,11 @@ namespace EasyReloadGuard.Editor
             foreach (var method in TypeCache.GetMethodsWithAttribute<OnExitPlayModeAttribute>().Where(IsProjectMember))
                 plan.AddMethod(method, method.GetCustomAttribute<OnExitPlayModeAttribute>(false).Order, false, null);
 
-            var versions = EditorCompat.GetRegisteredPackageVersions();
+            var packages = EditorCompat.GetRegisteredPackages();
             foreach (var adapterType in TypeCache.GetTypesDerivedFrom<ReloadAdapter>())
             {
                 if (!adapterType.IsAbstract && !ReflectionUtil.IsTestAssembly(adapterType.Assembly))
-                    plan.ApplyAdapter(adapterType, versions);
+                    plan.ApplyAdapter(adapterType, packages);
             }
 
             plan.Seal();
@@ -174,9 +182,13 @@ namespace EasyReloadGuard.Editor
             (onEnter ? EnterSteps : ExitSteps).Add(new ActionStep(Prefix(source) + name, order, action));
         }
 
-        internal void MarkOwnerManaged(Type type) => m_ManagedTypes.Add(type);
+        internal void MarkOwnerManaged(Type type, AdapterStatus adapter = null, string evidence = null)
+        {
+            if (!m_ManagedTypes.Add(type) || adapter == null || adapter.BuiltIn) return;
+            ReviewedTypes.Add((type, adapter, evidence));
+        }
 
-        internal void MarkSelfHandled(string target) => m_SelfHandledTargets.Add(target);
+        internal void MarkSelfHandled(string target, AdapterStatus adapter) => m_SelfHandledTargets[target] = adapter;
 
         internal void RequireReload(string source, string reason)
         {
@@ -185,7 +197,11 @@ namespace EasyReloadGuard.Editor
                 $"关闭 Domain Reload 时，每次进入 Play 前都会先重新加载脚本：{reason}"));
         }
 
-        internal void ApplyAdapter(Type adapterType, IReadOnlyDictionary<string, string> packageVersions)
+        internal void ApplyAdapter(Type adapterType, IReadOnlyDictionary<string, InstalledPackage> packages) =>
+            ApplyAdapter(adapterType, packages, adapterType.Assembly == typeof(ResetPlan).Assembly);
+
+        /// <param name="builtIn">本包内置的适配器针对 Unity 官方发布的包，按 package.json 版本复核；项目适配器不比对版本。</param>
+        internal void ApplyAdapter(Type adapterType, IReadOnlyDictionary<string, InstalledPackage> packages, bool builtIn)
         {
             ReloadAdapter adapter;
             AdapterStatus status;
@@ -193,7 +209,7 @@ namespace EasyReloadGuard.Editor
             {
                 adapter = (ReloadAdapter)Activator.CreateInstance(adapterType);
                 if (string.IsNullOrWhiteSpace(adapter.Target)) throw new InvalidOperationException("Target 为空");
-                status = new AdapterStatus(adapterType.FullName, adapter.Target, adapter.TargetKind);
+                status = new AdapterStatus(adapterType.FullName, adapter.Target, adapter.TargetKind, builtIn);
             }
             catch (Exception e)
             {
@@ -205,16 +221,30 @@ namespace EasyReloadGuard.Editor
             Adapters.Add(status);
             try
             {
-                if (!TryGetTargetVersion(adapter, packageVersions, out var version)) return; // 目标不存在：适配器休眠
-
-                status.InstalledVersion = version;
-                var verified = adapter.VerifiedVersions ?? Array.Empty<string>();
-                status.Verified = Array.IndexOf(verified, version) >= 0;
-                if (!status.Verified)
+                string version;
+                if (adapter.TargetKind == AdapterTargetKind.Package)
                 {
-                    Findings.Add(new Finding(RuleIds.AdapterUnverified, Severity.Warning, status.Name,
-                        $"目标 {adapter.Target} 当前版本 {version} 不在已验证列表 [{string.Join(", ", verified)}]。" +
-                        "复核该版本在关闭 Domain Reload 时的行为后更新 VerifiedVersions。"));
+                    if (!packages.TryGetValue(adapter.Target, out var package)) return; // 目标不存在：适配器休眠
+                    status.InstalledVersion = package.Describe();
+                    version = package.Version;
+                }
+                else
+                {
+                    version = ReflectionUtil.FindLoadedAssembly(adapter.Target)?.GetName().Version?.ToString();
+                    if (version == null) return;
+                    status.InstalledVersion = version;
+                }
+
+                if (builtIn)
+                {
+                    var verified = adapter.VerifiedVersions ?? Array.Empty<string>();
+                    status.Verified = Array.IndexOf(verified, version) >= 0;
+                    if (!status.Verified)
+                    {
+                        Findings.Add(new Finding(RuleIds.AdapterUnverified, Severity.Warning, status.Name,
+                            $"内置适配器复核过的 {adapter.Target} 版本为 [{string.Join(", ", verified)}]，当前为 {status.InstalledVersion}。" +
+                            "请升级 Easy Reload Guard，或联系本包维护者复核该版本。"));
+                    }
                 }
 
                 adapter.Configure(new ReloadAdapterBuilder(this, status));
@@ -265,16 +295,6 @@ namespace EasyReloadGuard.Editor
             Findings.Add(count == 0
                 ? new Finding(RuleIds.GenericExpansion, Severity.Warning, subject, "泛型静态字段没有找到任何闭合构造，未生成重置步骤。" + hint)
                 : new Finding(RuleIds.GenericExpansion, Severity.Info, subject, $"泛型静态字段已展开 {count} 个由派生类型确定的闭合构造。" + hint));
-        }
-
-        static bool TryGetTargetVersion(ReloadAdapter adapter, IReadOnlyDictionary<string, string> packageVersions, out string version)
-        {
-            version = null;
-            if (adapter.TargetKind == AdapterTargetKind.Package)
-                return packageVersions.TryGetValue(adapter.Target, out version);
-
-            version = ReflectionUtil.FindLoadedAssembly(adapter.Target)?.GetName().Version?.ToString();
-            return version != null;
         }
 
         static Finding Declaration(MemberInfo member, string source, string message) =>
