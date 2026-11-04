@@ -9,6 +9,8 @@ namespace ReloadIntegrationSamples
 
         void OnEnable() => ScoreSystem.ScoreChanged += Show;
 
+        void OnDisable() => ScoreSystem.ScoreChanged -= Show;
+
         void Show(int score)
         {
             Text = score.ToString();

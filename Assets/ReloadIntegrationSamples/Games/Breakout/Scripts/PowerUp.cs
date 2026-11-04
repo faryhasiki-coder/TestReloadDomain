@@ -5,6 +5,7 @@ using UnityEngine;
 public class PowerUp : MonoBehaviour
 {
     // public
+    [EasyReloadGuard.ResetStatic]
     public static PowerUp Instance;
 
     [Header("Settings")]

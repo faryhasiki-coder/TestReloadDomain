@@ -28,7 +28,7 @@
 
 | 信息 | 位置 |
 | --- | --- |
-| Reload 处理工具包 | 嵌入式包 `Packages/com.yongshi.easyreloadguard`（Easy Reload Guard；程序集 `EasyReloadGuard`、`EasyReloadGuard.Editor`、`EasyReloadGuard.Editor.Tests`），说明见包内 README |
+| Reload 处理工具包 | 远程 Git UPM 包 `com.yongshi.easyreloadguard`（仓库 `faryhasiki-coder/EasyReloadGuard`；固定提交见 `Packages/manifest.json`，包测试通过 `testables` 启用）；程序集 `EasyReloadGuard`、`EasyReloadGuard.Editor`、`EasyReloadGuard.Editor.Tests`，说明见包内 README |
 | 正式案例 | `Assets/DomainReloadCases`（复现组 `LeakyCaseCounter`、`LeakyUniTaskLoader`，修复组 `GuardedCaseCounter`、`GuardedUniTaskLoader`；partial 类 `PlayReentryTests` 包含连续 3 轮重入与 Domain Reload 开启对照，所有关闭 Domain Reload 的用例用 Order 排在对照之前） |
 | 测试流水线 | `Tools/UnityCI/Run-UnityTests.ps1`：编辑器占用工程时镜像到 `%TEMP%\EasyReloadGuardCI` 后用 batchmode 运行测试和检查 |
 | 检查基线 | `ProjectSettings/EasyReloadGuardBaseline.txt`，只含复现案例故意保留的问题 |

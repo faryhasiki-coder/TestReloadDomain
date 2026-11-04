@@ -3,6 +3,7 @@
     "rootNamespace": "ReloadGuardProjectAdapters.Editor",
     "references": [
         "EasyReloadGuard.Editor",
+        "EasyReloadGuard",
         "UniTask"
     ],
     "includePlatforms": [

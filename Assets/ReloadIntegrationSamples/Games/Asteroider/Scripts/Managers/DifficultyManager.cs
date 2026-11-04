@@ -2,6 +2,7 @@ using UnityEngine;
 
 public class DifficultyManager : MonoBehaviour
 {
+    [field: EasyReloadGuard.ResetStatic]
     public static DifficultyManager Instance { get; private set; }
 
     [Header("Progression")]

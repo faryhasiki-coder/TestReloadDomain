@@ -5,6 +5,7 @@ using UnityEngine;
 public class BallSpawner : MonoBehaviour
 {
     // public
+    [EasyReloadGuard.ResetStatic]
     public static BallSpawner Instance;
 
     [Header("References")]

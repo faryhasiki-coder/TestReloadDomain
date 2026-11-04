@@ -34,7 +34,6 @@ MonoBehaviour:
     m_Name: OpenUPM
     m_Url: https://package.openupm.com
     m_Scopes:
-    - com.coplaydev.unity-mcp
     - com.cysharp.unitask
     m_IsDefault: 0
     m_Capabilities: 0
@@ -42,22 +41,11 @@ MonoBehaviour:
     m_Compliance:
       m_Status: 0
       m_Violations: []
-  - m_Id: scoped:project:yongshi
-    m_Name: yongshi
-    m_Url: http://upm.in.ys4fun.com
-    m_Scopes:
-    - com.unity.pipeline
-    m_IsDefault: 0
-    m_Capabilities: 0
-    m_ConfigSource: 4
-    m_Compliance:
-      m_Status: 0
-      m_Violations: []
-  m_UserSelectedRegistryName: yongshi
+  m_UserSelectedRegistryName: OpenUPM
   m_UserAddingNewScopedRegistry: 0
   m_RegistryInfoDraft:
     m_Modified: 0
     m_ErrorMessage: 
-    m_UserModificationsInstanceId: -898
-    m_OriginalInstanceId: -902
+    m_UserModificationsInstanceId: -894
+    m_OriginalInstanceId: -898
   m_LoadAssets: 0

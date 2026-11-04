@@ -31,6 +31,20 @@ namespace ReloadIntegrationSamples.Tests
                 Assert.AreEqual("30", label.Text);
 
                 Record("计分", cycle, $"score={ScoreSystem.Score} label={label.Text}");
+
+                label.enabled = false;
+                EventBus<EnemyKilled>.Publish(new EnemyKilled(10));
+                Assert.AreEqual("30", label.Text, "禁用的显示对象应已退订，不再刷新");
+                label.enabled = true;
+                ScoreSystem.Shutdown();
+                ScoreSystem.Shutdown();
+                EventBus<EnemyKilled>.Publish(new EnemyKilled(10));
+                Assert.AreEqual(0, ScoreSystem.Score, "停止计分后不再接收击杀，重复停止应安全");
+                ScoreSystem.Initialize();
+                ScoreSystem.Initialize();
+                EventBus<EnemyKilled>.Publish(new EnemyKilled(10));
+                Assert.AreEqual(10, ScoreSystem.Score, "同一局停止后重开应恢复倍率且只订阅一次");
+                Assert.AreEqual("10", label.Text);
                 yield return LeavePlay();
             }
         }

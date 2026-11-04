@@ -1,6 +1,6 @@
 # Domain Reload 案例
 
-验证 Easy Reload Guard（`Packages/com.yongshi.easyreloadguard`）的正式案例。复现组和修复组分开管理：复现组故意保留问题，不要为它加入重置逻辑。
+验证 Easy Reload Guard（远程 UPM 包 `com.yongshi.easyreloadguard`，引用见 `Packages/manifest.json`）的正式案例。复现组和修复组分开管理：复现组故意保留问题，不要为它加入重置逻辑。
 
 用于给 Easy Reload Guard 做**接入测试**的接入前样例不在本目录，见 [Assets/ReloadIntegrationSamples](../ReloadIntegrationSamples/README.md)。2026-10-23 曾在本目录加入的 7 组"已接入"案例存在错误，已删除，原因见[接入样例案例页](../../TestCases/Cases/06-IntegrationSamples.md)的修正记录。
 

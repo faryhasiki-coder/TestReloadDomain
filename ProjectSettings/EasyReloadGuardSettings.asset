@@ -12,9 +12,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: dbf4403bfbd7444e94dc1b956e816fd6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: EasyReloadGuard.Editor::EasyReloadGuard.Editor.ReloadGuardSettings
-  prePlayCheck: 1
+  prePlayCheck: 2
   reloadOnResetFailure: 1
   verboseLog: 0
+  residueProbe: 1
+  residueProbeReadTypeInitializers: 0
   excludedPackages:
   - com.unity.pipeline
   excludedAssemblies: []

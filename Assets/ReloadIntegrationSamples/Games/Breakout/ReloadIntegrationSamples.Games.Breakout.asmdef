@@ -2,7 +2,8 @@
     "name": "ReloadIntegrationSamples.Games.Breakout",
     "rootNamespace": "",
     "references": [
-        "Unity.InputSystem"
+        "Unity.InputSystem",
+        "EasyReloadGuard"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

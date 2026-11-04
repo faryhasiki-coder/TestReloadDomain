@@ -1,7 +1,7 @@
 {
     "name": "ReloadIntegrationSamples",
     "rootNamespace": "ReloadIntegrationSamples",
-    "references": [],
+    "references": ["EasyReloadGuard"],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,

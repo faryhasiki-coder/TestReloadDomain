@@ -4,6 +4,7 @@ using UnityEngine.UIElements;
 
 public class UIManager : MonoBehaviour
 {
+    [field: EasyReloadGuard.ResetStatic]
     public static UIManager Instance { get; private set; }
 
     private Label scoreLabel;
