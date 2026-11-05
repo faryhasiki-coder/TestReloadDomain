@@ -57,24 +57,17 @@ namespace EasyReloadGuard.Editor
 
         public static GUIContent Content(string text, string icon, string tooltip = null) => new GUIContent(text, Icon(icon), tooltip);
 
-        public static Texture2D SeverityIcon(Severity severity)
+        /// <summary>不符合项按是否暂缓区分：待处理用错误图标，暂缓用警告图标；建议用提示图标。</summary>
+        public static Texture2D SeverityIcon(Severity severity, bool deferred = false)
         {
-            switch (severity)
-            {
-                case Severity.Error: return Icon("console.erroricon.sml");
-                case Severity.Warning: return Icon("console.warnicon.sml");
-                default: return Icon("console.infoicon.sml");
-            }
+            if (severity != Severity.Violation) return Icon("console.infoicon.sml");
+            return Icon(deferred ? "console.warnicon.sml" : "console.erroricon.sml");
         }
 
-        public static Color SeverityColor(Severity severity)
+        public static Color SeverityColor(Severity severity, bool deferred = false)
         {
-            switch (severity)
-            {
-                case Severity.Error: return Bad;
-                case Severity.Warning: return Caution;
-                default: return Accent;
-            }
+            if (severity != Severity.Violation) return Accent;
+            return deferred ? Caution : Bad;
         }
 
         /// <summary>圆角色块标签，宽度随文字。</summary>

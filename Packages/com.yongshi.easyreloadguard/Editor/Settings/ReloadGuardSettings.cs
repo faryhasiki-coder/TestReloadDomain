@@ -10,11 +10,11 @@ namespace EasyReloadGuard.Editor
         [InspectorName("不检查")]
         Off,
 
-        /// <summary>存在不在遗留清单中的错误时输出警告，仍然进入 Play。</summary>
+        /// <summary>存在不在暂缓清单中的不符合项时输出警告，仍然进入 Play。</summary>
         [InspectorName("只输出警告")]
         Warn,
 
-        /// <summary>存在不在遗留清单中的错误时阻止进入 Play。</summary>
+        /// <summary>存在不在暂缓清单中的不符合项时阻止进入 Play。</summary>
         [InspectorName("阻止进入 Play")]
         Block,
     }
@@ -23,10 +23,10 @@ namespace EasyReloadGuard.Editor
     [FilePath("ProjectSettings/EasyReloadGuardSettings.asset", FilePathAttribute.Location.ProjectFolder)]
     internal sealed class ReloadGuardSettings : ScriptableSingleton<ReloadGuardSettings>
     {
-        [Tooltip("关闭 Domain Reload 时，进入 Play 前用最近一次检查结果判断：有不在遗留问题清单中的错误时只输出警告，或阻止进入 Play。")]
+        [Tooltip("关闭 Domain Reload 时，进入 Play 前用最近一次检查结果判断：有不在暂缓清单中的不符合项时只输出警告，或阻止进入 Play。")]
         public PrePlayCheck prePlayCheck = PrePlayCheck.Warn;
 
-        [Tooltip("进入或退出 Play 时有重置、释放步骤失败，下次进入 Play 前先自动重新加载脚本，避免带着上一次 Play 的数据运行。")]
+        [Tooltip("进入 Play 的重置有步骤失败时，本次 Play 作废：退出、重新加载脚本后自动重新进入（再次失败则只退出）。退出 Play 的释放失败时，下次进入前重新加载脚本。关闭后重置失败只退出 Play。")]
         public bool reloadOnResetFailure = true;
 
         [Tooltip("在 Console 输出每次 Play 的重置与释放统计。")]

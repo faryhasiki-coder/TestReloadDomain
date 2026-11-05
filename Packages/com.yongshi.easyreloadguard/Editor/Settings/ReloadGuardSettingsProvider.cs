@@ -16,8 +16,8 @@ namespace EasyReloadGuard.Editor
         static string s_Version;
 
         SerializedObject m_Settings;
-        bool m_ShowInfo;
-        bool m_ShowBaselined;
+        bool m_ShowSuggestions;
+        bool m_ShowDeferred;
         bool m_ShowEnter = true;
         bool m_ShowExit = true;
         bool m_ShowScope;
@@ -25,6 +25,7 @@ namespace EasyReloadGuard.Editor
         bool m_ShowSkill = ReloadGuardSkillInstaller.Targets.Any(t =>
             t.ToolPresent && ReloadGuardSkillInstaller.GetStatus(t) != ReloadGuardSkillInstaller.SkillStatus.UpToDate);
         bool m_ShowScanned;
+        bool m_ShowUnchecked;
         bool m_ShowAdapters;
         readonly Dictionary<string, bool> m_GroupExpanded = new Dictionary<string, bool>();
 
@@ -33,7 +34,7 @@ namespace EasyReloadGuard.Editor
             keywords = new HashSet<string>
             {
                 "Domain Reload", "Enter Play Mode", "static", "Easy Reload Guard",
-                "重新加载脚本", "检查", "遗留", "残留", "排除",
+                "重新加载脚本", "检查", "规范", "暂缓", "残留", "排除",
             };
         }
 
@@ -200,9 +201,10 @@ namespace EasyReloadGuard.Editor
                 GUILayout.Label("操作", EditorStyles.boldLabel);
                 using (new EditorGUILayout.HorizontalScope())
                 {
-                    if (GUILayout.Button(ReloadGuardStyles.Content(" 运行检查", "Search Icon", "扫描 Assets 与全部包中的静态状态，结果显示在下方"), GUILayout.Height(26)))
+                    if (GUILayout.Button(ReloadGuardStyles.Content(" 运行检查", "Search Icon", "按规范检查 Assets 与全部包中的静态状态，结果显示在下方"), GUILayout.Height(26)))
                         action = ReloadGuardMenu.RunAudit;
-                    if (GUILayout.Button(ReloadGuardStyles.Content(" 把当前问题记为已知遗留", "SaveAs", $"写入 {Baseline.FilePath}，记录的问题不再阻止进入 Play"), GUILayout.Height(26)))
+                    if (GUILayout.Button(ReloadGuardStyles.Content(" 把当前问题列为暂缓", "SaveAs",
+                            $"写入 {Baseline.FilePath}。暂缓不等于符合规范：列入的问题不再阻止进入 Play，但结论仍是不符合规范"), GUILayout.Height(26)))
                         action = ReloadGuardMenu.WriteBaseline;
                 }
 
@@ -241,8 +243,8 @@ namespace EasyReloadGuard.Editor
                 GUILayout.FlexibleSpace();
                 if (report != null)
                 {
-                    m_ShowInfo = GUILayout.Toggle(m_ShowInfo, "显示提示", EditorStyles.miniButtonLeft);
-                    m_ShowBaselined = GUILayout.Toggle(m_ShowBaselined, "显示已知遗留", EditorStyles.miniButtonRight);
+                    m_ShowSuggestions = GUILayout.Toggle(m_ShowSuggestions, "显示建议", EditorStyles.miniButtonLeft);
+                    m_ShowDeferred = GUILayout.Toggle(m_ShowDeferred, "显示暂缓", EditorStyles.miniButtonRight);
                 }
             }
 
@@ -262,10 +264,13 @@ namespace EasyReloadGuard.Editor
         {
             using (new EditorGUILayout.HorizontalScope())
             {
-                CountPill("错误", report.Count(Severity.Error), ReloadGuardStyles.Bad);
-                CountPill("警告", report.Count(Severity.Warning), ReloadGuardStyles.Caution);
-                CountPill("提示", report.Count(Severity.Info), ReloadGuardStyles.Accent);
-                ReloadGuardStyles.DrawPill($"已知遗留 {report.BaselinedCount}", ReloadGuardStyles.Neutral, $"记录在 {Baseline.FilePath} 中，不阻止进入 Play");
+                ReloadGuardStyles.DrawPill(report.IsConformant ? "符合规范" : "不符合规范",
+                    report.IsConformant ? ReloadGuardStyles.Good : ReloadGuardStyles.Bad,
+                    "按规范判定：每个静态字段要有本包执行的处理方式，或能证明在初始化之后不变");
+                CountPill("待处理", report.BlockingCount, ReloadGuardStyles.Bad);
+                ReloadGuardStyles.DrawPill($"暂缓 {report.DeferredCount}", report.DeferredCount > 0 ? ReloadGuardStyles.Caution : ReloadGuardStyles.Neutral,
+                    $"列在 {Baseline.FilePath} 中：不阻止进入 Play，但仍然不符合规范");
+                CountPill("建议", report.SuggestionCount, ReloadGuardStyles.Accent);
                 GUILayout.FlexibleSpace();
             }
         }
@@ -286,8 +291,10 @@ namespace EasyReloadGuard.Editor
                         using (new EditorGUILayout.HorizontalScope())
                         {
                             EditorGUILayout.LabelField($"{adapter.Target} {adapter.InstalledVersion}", EditorStyles.miniLabel);
-                            if (!adapter.BuiltIn)
-                                ReloadGuardStyles.DrawPill("比对静态字段", ReloadGuardStyles.Neutral, "跳过检查的代码中静态字段有变化时提醒复核，不比对版本号");
+                            if (adapter.SelfHandledEvidence == null)
+                                ReloadGuardStyles.DrawPill("声明处理方式", ReloadGuardStyles.Neutral, "由适配器替目标重置或释放，目标的静态字段照常检查");
+                            else if (!adapter.BuiltIn)
+                                ReloadGuardStyles.DrawPill("比对静态字段", ReloadGuardStyles.Neutral, "信任的官方包中静态字段有变化时提醒复核，不比对版本号");
                             else
                                 ReloadGuardStyles.DrawPill(adapter.Verified ? "版本已复核" : "版本未复核",
                                     adapter.Verified ? ReloadGuardStyles.Good : ReloadGuardStyles.Caution);
@@ -304,41 +311,43 @@ namespace EasyReloadGuard.Editor
                         EditorStyles.wordWrappedMiniLabel);
             }
 
-            if (report.MarkerExcludedAssemblies.Count > 0)
+            var notChecked = report.UncheckedScope();
+            m_ShowUnchecked = EditorGUILayout.Foldout(m_ShowUnchecked, $"未检查范围（{notChecked.Count}，不参与规范判定）", true);
+            if (m_ShowUnchecked)
             {
-                EditorGUILayout.LabelField(
-                    $"目录中放了排除标记、未检查的程序集（{report.MarkerExcludedAssemblies.Count}）：" +
-                    string.Join("；", report.MarkerExcludedAssemblies.Select(p => $"{p.Key}（{p.Value}）")),
-                    EditorStyles.wordWrappedMiniLabel);
+                using (new EditorGUI.IndentLevelScope())
+                    EditorGUILayout.LabelField(notChecked.Count == 0 ? "无" : string.Join("；", notChecked), EditorStyles.wordWrappedMiniLabel);
             }
         }
 
-        /// <summary>按“是否已知遗留 → 级别 → 问题类型”分组，组内逐条列出成员、原因与读写位置。</summary>
+        /// <summary>按“待处理 → 暂缓 → 建议”与问题类型分组，组内逐条列出成员、原因与读写位置。</summary>
         void DrawFindings(AuditReport report)
         {
             var visible = report.Findings
-                .Where(f => (m_ShowInfo || f.Severity != Severity.Info) && (m_ShowBaselined || !f.Baselined))
+                .Where(f => f.IsViolation ? m_ShowDeferred || !f.Baselined : m_ShowSuggestions && !f.Baselined)
                 .ToList();
             if (visible.Count == 0)
             {
                 using (new EditorGUILayout.HorizontalScope(ReloadGuardStyles.Card))
                 {
                     GUILayout.Label(ReloadGuardStyles.Icon("TestPassed"), GUILayout.Width(18), GUILayout.Height(18));
-                    GUILayout.Label("没有需要处理的问题。", EditorStyles.boldLabel);
+                    GUILayout.Label(report.IsConformant ? "符合规范。" : "没有待处理的不符合项（暂缓的仍不符合规范）。", EditorStyles.boldLabel);
                 }
 
                 return;
             }
 
             var shown = 0;
-            foreach (var group in visible.GroupBy(f => (f.Baselined, f.Severity, f.Title)).OrderBy(g => g.Key.Baselined))
+            foreach (var group in visible.GroupBy(f => (f.Baselined, f.Severity, f.Title))
+                         .OrderByDescending(g => g.Key.Severity).ThenBy(g => g.Key.Baselined))
             {
                 if (shown >= k_MaxRows) break;
                 var (baselined, severity, title) = group.Key;
                 var key = $"{baselined}|{severity}|{title}";
-                if (!m_GroupExpanded.TryGetValue(key, out var expanded)) expanded = !baselined;
+                if (!m_GroupExpanded.TryGetValue(key, out var expanded)) expanded = !baselined && severity == Severity.Violation;
 
-                var header = new GUIContent($" {title}（{group.Count()}）{(baselined ? " · 已知遗留" : "")}", ReloadGuardStyles.SeverityIcon(severity));
+                var suffix = severity != Severity.Violation ? " · 建议" : baselined ? " · 暂缓" : string.Empty;
+                var header = new GUIContent($" {title}（{group.Count()}）{suffix}", ReloadGuardStyles.SeverityIcon(severity, baselined));
                 using (new EditorGUILayout.VerticalScope(ReloadGuardStyles.Card))
                 {
                     m_GroupExpanded[key] = expanded = EditorGUILayout.Foldout(expanded, header, true, ReloadGuardStyles.GroupFoldout);
@@ -354,7 +363,7 @@ namespace EasyReloadGuard.Editor
                     }
                 }
 
-                ReloadGuardStyles.DrawLeftAccent(baselined ? ReloadGuardStyles.Neutral : ReloadGuardStyles.SeverityColor(severity));
+                ReloadGuardStyles.DrawLeftAccent(ReloadGuardStyles.SeverityColor(severity, baselined));
             }
 
             if (shown >= k_MaxRows && visible.Count > k_MaxRows)

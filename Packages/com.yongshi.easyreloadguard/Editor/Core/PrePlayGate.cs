@@ -1,6 +1,5 @@
 using System;
 using System.Linq;
-using UnityEditor;
 using UnityEngine;
 
 namespace EasyReloadGuard.Editor
@@ -8,10 +7,11 @@ namespace EasyReloadGuard.Editor
     /// <summary>ExitingEditMode 时的关口：先处理强制重载，再按设置执行检查。仅关闭 Domain Reload 时生效。</summary>
     internal static class PrePlayGate
     {
-        internal static void OnExitingEditMode()
+        /// <summary>返回 false 表示本次进入 Play 已取消（改为先重新加载脚本，或检查不通过被阻止）。</summary>
+        internal static bool OnExitingEditMode()
         {
             if (EditorCompat.PlayModeOptionsMismatch) Log.Warning(EditorCompat.MismatchHint + "。");
-            if (!EditorCompat.DomainReloadDisabled) return;
+            if (!EditorCompat.DomainReloadDisabled) return true;
 
             try
             {
@@ -25,37 +25,38 @@ namespace EasyReloadGuard.Editor
                     EditorCompat.CancelEnterPlayMode();
                     Log.Warning($"本次进入 Play 改为先重新加载脚本：{reason}");
                     EditorCompat.RunOnNextUpdate(() => ForceReload.ReloadAndPlay(reason));
-                    return;
+                    return false;
                 }
 
-                CheckAudit();
+                return CheckAudit();
             }
             catch (Exception e)
             {
                 // 工具自身故障不阻断 Play，但必须可见
                 Log.Exception("进入 Play 前的关口执行失败，已放行。", e);
+                return true;
             }
         }
 
-        static void CheckAudit()
+        static bool CheckAudit()
         {
             var mode = ReloadGuardSettings.instance.prePlayCheck;
-            if (mode == PrePlayCheck.Off) return;
+            if (mode == PrePlayCheck.Off) return true;
 
             var report = ReloadAudit.Cached;
-            if (report.BlockingCount == 0) return;
+            if (report.BlockingCount == 0) return true;
 
-            var message = $"检查发现 {report.BlockingCount} 个错误不在遗留问题清单中（{report.Summary()}）。";
+            var message = $"检查发现 {report.BlockingCount} 个不符合规范的问题不在暂缓清单中（{report.Summary()}）。";
             if (mode == PrePlayCheck.Block)
             {
                 EditorCompat.CancelEnterPlayMode();
-                Log.Error(message + "已阻止进入 Play：修复、用 [ReloadSafe] 说明保留原因，或确认后记为已知遗留，然后重试。\n" + report.TopLines(20));
+                Log.Error(message + "已阻止进入 Play：补上处理方式，或在设置页列为暂缓（仍不符合规范），然后重试。\n" + report.TopLines(20));
                 if (!Application.isBatchMode) ReloadGuardSettingsProvider.Open();
+                return false;
             }
-            else
-            {
-                Log.Warning(message + "详见 Project Settings/Easy Reload Guard。\n" + report.TopLines(10));
-            }
+
+            Log.Warning(message + "详见 Project Settings/Easy Reload Guard。\n" + report.TopLines(10));
+            return true;
         }
 
         static string Append(string reasons, string reason) => reasons == null ? reason : reasons + "；" + reason;

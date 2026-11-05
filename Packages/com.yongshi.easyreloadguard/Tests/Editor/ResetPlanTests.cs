@@ -115,7 +115,7 @@ namespace EasyReloadGuard.Editor.Tests
             });
 
             Assert.IsEmpty(plan.FieldSteps);
-            Assert.AreEqual(4, plan.Findings.Count(f => f.RuleId == RuleIds.InvalidDeclaration && f.Severity == Severity.Error));
+            Assert.AreEqual(4, plan.Findings.Count(f => f.RuleId == RuleIds.InvalidDeclaration && f.Severity == Severity.Violation));
             Assert.IsTrue(plan.Findings.All(f => !f.Baselinable));
         }
 
@@ -160,7 +160,7 @@ namespace EasyReloadGuard.Editor.Tests
 
             Assert.AreEqual(1, plan.FieldSteps.Count);
             Assert.IsNull(GenericHolder<string>.Value);
-            Assert.IsTrue(plan.Findings.Any(f => f.RuleId == RuleIds.GenericExpansion && f.Severity == Severity.Info));
+            Assert.IsTrue(plan.Findings.Any(f => f.RuleId == RuleIds.GenericExpansion && f.Severity == Severity.Suggestion));
         }
 
         [Test]
@@ -215,7 +215,7 @@ namespace EasyReloadGuard.Editor.Tests
             var errors = plan.Findings.Where(f => f.RuleId == RuleIds.InvalidDeclaration).ToList();
             Assert.AreEqual(2, errors.Count);
             Assert.IsTrue(errors.All(f => f.Subject.Contains(nameof(InstanceAttributeFixture))));
-            Assert.IsTrue(errors.All(f => f.Severity == Severity.Error && !f.Baselinable), "声明错误不可入基线");
+            Assert.IsTrue(errors.All(f => f.Severity == Severity.Violation && !f.Baselinable), "声明错误不可暂缓");
         }
 
         [Test]
@@ -254,7 +254,8 @@ namespace EasyReloadGuard.Editor.Tests
             CollectionAssert.AreEqual(new[] { "adapter", "adapter" }, ResetFixture.Calls);
             Assert.IsTrue(plan.IsFieldHandled(Field(nameof(ResetFixture.Counter))));
             Assert.AreEqual(1, plan.RequiredReloadReasons.Count);
-            Assert.IsTrue(plan.Adapters.Single().Verified);
+            Assert.IsFalse(plan.Adapters.Single().BuiltIn, "项目适配器不比较版本");
+            Assert.IsTrue(plan.RequiresReload(plan.Adapters.Single().Target));
         }
 
         [Test]
@@ -263,42 +264,44 @@ namespace EasyReloadGuard.Editor.Tests
             var plan = Plan(p => p.ApplyAdapter(typeof(BrokenAdapter), NoPackages));
 
             Assert.IsEmpty(plan.FieldSteps);
-            Assert.AreEqual(3, plan.Findings.Count(f => f.RuleId == RuleIds.AdapterBroken && f.Severity == Severity.Error));
+            Assert.AreEqual(2, plan.Findings.Count(f => f.RuleId == RuleIds.AdapterBroken && f.Severity == Severity.Violation));
+            Assert.AreEqual(1, plan.Findings.Count(f => f.RuleId == RuleIds.AdapterInvalid));
         }
 
         [Test]
-        public void Adapter_KnownIssueReportsBaselinableWarningAndChecksMember()
+        public void Adapter_KnownIssueIsDeferrableButDoesNotPermitAssemblySelfHandled()
         {
             var plan = Plan(p => p.ApplyAdapter(typeof(KnownIssueAdapter), NoPackages));
 
             var issue = plan.Findings.Single(f => f.RuleId == RuleIds.AdapterKnownIssue);
-            Assert.AreEqual(Severity.Warning, issue.Severity);
+            Assert.AreEqual(Severity.Violation, issue.Severity);
             Assert.IsTrue(issue.Baselinable);
             StringAssert.EndsWith("." + nameof(ResetFixture.Counter), issue.Subject);
             Assert.AreEqual(1, plan.Findings.Count(f => f.RuleId == RuleIds.AdapterBroken), "成员不存在时报告适配器失效");
-            Assert.IsTrue(plan.IsSelfHandled(plan.Adapters.Single().Target));
+            Assert.IsFalse(plan.IsSelfHandled(plan.Adapters.Single().Target));
+            Assert.IsTrue(plan.Findings.Any(f => f.RuleId == RuleIds.AdapterInvalid && !f.Baselinable));
         }
 
         [Test]
-        public void Adapter_UnverifiedVersionWarnsButStillApplies()
+        public void Adapter_UnverifiedBuiltInVersionDoesNotTrustTarget()
         {
-            var plan = Plan(p => p.ApplyAdapter(typeof(UnverifiedAdapter), NoPackages, builtIn: true));
+            var plan = Plan(p => p.ApplyAdapter(typeof(UnverifiedAdapter), OfficialPackages, builtIn: true));
             var status = plan.Adapters.Single();
 
             Assert.IsFalse(status.Verified);
-            Assert.IsTrue(plan.IsSelfHandled(status.Target));
-            Assert.IsTrue(plan.Findings.Any(f => f.RuleId == RuleIds.AdapterUnverified && f.Severity == Severity.Warning));
+            Assert.IsFalse(plan.IsSelfHandled(status.Target));
+            Assert.IsTrue(plan.Findings.Any(f => f.RuleId == RuleIds.AdapterUnverified && f.Severity == Severity.Violation && !f.Baselinable));
         }
 
         [Test]
         public void Adapter_ProjectAdapterDoesNotCompareVersions()
         {
-            var plan = Plan(p => p.ApplyAdapter(typeof(UnverifiedAdapter), NoPackages));
+            var plan = Plan(p => p.ApplyAdapter(typeof(UnverifiedAdapter), OfficialPackages));
             var status = plan.Adapters.Single();
 
             Assert.IsFalse(status.BuiltIn);
             Assert.IsFalse(plan.Findings.Any(f => f.RuleId == RuleIds.AdapterUnverified));
-            Assert.AreSame(status, plan.ProjectSelfHandler(status.Target), "SelfHandled 的程序集交给静态字段比对");
+            Assert.AreSame(status, plan.ProjectSelfHandler(status.Target), "官方包的 SelfHandled 交给静态字段比对");
         }
 
         [Test]
@@ -343,13 +346,79 @@ namespace EasyReloadGuard.Editor.Tests
             CollectionAssert.AreEquivalent(new[] { "s_Old:Int32", "s_Values:Int32[]" }, previous);
             Assert.IsNull(AdapterReview.Previous(new HashSet<string>(), prefix));
 
-            var message = AdapterReview.Describe("A", "HandlesType", AdapterReview.Signatures(typeof(ReviewFixture)), previous);
+            var message = AdapterReview.Describe("A", "SelfHandled", AdapterReview.Signatures(typeof(ReviewFixture)), previous);
             StringAssert.Contains("删除 s_Old:Int32", message);
             StringAssert.Contains("s_Map", message);
             StringAssert.DoesNotContain("s_Values", message, "没变的字段不列出");
         }
 
         static readonly IReadOnlyDictionary<string, InstalledPackage> NoPackages = new Dictionary<string, InstalledPackage>();
+
+        static readonly IReadOnlyDictionary<string, InstalledPackage> OfficialPackages = new Dictionary<string, InstalledPackage>
+        {
+            ["com.unity.test-fixture"] = new InstalledPackage("1.0.0", "Registry", null, null, true),
+        };
+
+        [Test]
+        public void Adapter_SelfHandledRejectsNonOfficialPackage()
+        {
+            var packages = new Dictionary<string, InstalledPackage>
+            {
+                ["com.unity.test-fixture"] = new InstalledPackage("1.0.0", "Embedded", null, null),
+            };
+            var plan = Plan(p => p.ApplyAdapter(typeof(UnverifiedAdapter), packages));
+            Assert.IsFalse(plan.IsSelfHandled("com.unity.test-fixture"), "包名不是来源证明");
+            Assert.IsTrue(plan.Findings.Any(f => f.RuleId == RuleIds.AdapterInvalid && !f.Baselinable));
+        }
+
+        [Test]
+        public void Adapter_ResetTypeRegistersExecutableReset()
+        {
+            var plan = Plan(p => p.ApplyAdapter(typeof(TypeResetAdapter), NoPackages));
+            OwnerFixture.Value = 17;
+            RunEnter(plan);
+            Assert.AreEqual(0, OwnerFixture.Value);
+            Assert.IsTrue(plan.IsResetType(typeof(OwnerFixture)));
+            Assert.IsEmpty(plan.Findings);
+        }
+
+        [Test]
+        public void GenericField_ExpandsConstraintsAndExplicitTypeArguments()
+        {
+            var plan = Plan(p => p.ApplyAdapter(typeof(GenericResetAdapter), NoPackages));
+            CollectionAssert.AreEquivalent(new[] { typeof(ConstrainedHolder<ConcreteConstraint>), typeof(GenericHolder<int>) },
+                plan.FieldSteps.Select(s => s.Field.DeclaringType));
+            RunEnter(plan);
+            ConstrainedHolder<ConcreteConstraint>.Value = 9;
+            GenericHolder<int>.Value = 4;
+            RunEnter(plan);
+            Assert.AreEqual(0, ConstrainedHolder<ConcreteConstraint>.Value);
+            Assert.AreEqual(0, GenericHolder<int>.Value);
+            Assert.IsFalse(plan.Findings.Any(f => f.IsViolation));
+        }
+
+        [Test]
+        public void GenericField_InvalidOrOpenArgumentsCannotBeDeferred()
+        {
+            var plan = Plan(p => p.AddGenericField(typeof(ConstrainedHolder<>).GetField("Value"), ResetMode.Default, "test",
+                new[] { typeof(string), typeof(GenericHolder<>), null }));
+            Assert.IsEmpty(plan.FieldSteps);
+            Assert.IsTrue(plan.Findings.Any(f => f.RuleId == RuleIds.AdapterBroken));
+            Assert.IsTrue(plan.Findings.All(f => f.IsViolation && !f.Baselinable));
+        }
+
+        [Test]
+        public void InitialValue_ObservedBeforeCallbacksRestoresOriginalValue()
+        {
+            var plan = Plan(p => p.AddField(Field(nameof(ResetFixture.Seeded)), ResetMode.InitialValue, null));
+            plan.FieldSteps.Single().Observe();
+            ResetFixture.Seeded = 7; // 模拟 InitializeOnEnterPlayMode 或编辑对象退出回调。
+            RunEnter(plan);
+            Assert.AreEqual(5, ResetFixture.Seeded);
+            ResetFixture.Seeded = 11;
+            RunEnter(plan);
+            Assert.AreEqual(5, ResetFixture.Seeded, "第二轮不能重新采集已被业务修改的值");
+        }
 
         static readonly FieldInfo k_Initial = typeof(FieldResetStep).GetField("m_Initial", BindingFlags.Instance | BindingFlags.NonPublic);
 

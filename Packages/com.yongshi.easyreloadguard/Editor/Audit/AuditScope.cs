@@ -10,7 +10,7 @@ namespace EasyReloadGuard.Editor
     /// <summary>
     /// 检查范围：Assets 与全部包（嵌入式、注册表缓存）中的 Player 程序集，以及对当前 Player 平台可用的预编译 DLL。
     /// 仅编辑器可用的 DLL（版本管理、IDE、IL 处理等工具库）不参与 Play 运行逻辑，不扫描；
-    /// 设置中排除的包/程序集、适配器声明 SelfHandled 的包/程序集、所在目录放了排除标记的程序集也不扫描。
+    /// 设置中排除的包/程序集、Unity 官方包的 SelfHandled、所在目录放了排除标记的程序集也不扫描，它们记入报告的“未检查范围”。
     /// </summary>
     internal static class AuditScope
     {
@@ -73,8 +73,18 @@ namespace EasyReloadGuard.Editor
 
             void Consider(string name, string package, bool precompiled)
             {
-                if (settings.excludedAssemblies.Contains(name)) return;
-                if (package != null && settings.excludedPackages.Contains(package)) return;
+                if (settings.excludedAssemblies.Contains(name))
+                {
+                    report.SettingsExcludedAssemblies[name] = "设置中排除的程序集";
+                    return;
+                }
+
+                if (package != null && settings.excludedPackages.Contains(package))
+                {
+                    report.SettingsExcludedAssemblies[name] = $"设置中排除的包 {package}";
+                    return;
+                }
+
                 if (plan.IsSelfHandled(name) || (package != null && plan.IsSelfHandled(package)))
                 {
                     if (!report.SelfHandledAssemblies.Contains(name)) report.SelfHandledAssemblies.Add(name);
@@ -85,6 +95,8 @@ namespace EasyReloadGuard.Editor
 
                 wanted.Add(name);
                 origins[name] = Origin(package, precompiled);
+                if (plan.RequiresReload(name) || (package != null && plan.RequiresReload(package)))
+                    report.ReloadedAssemblies.Add(name);
             }
         }
 

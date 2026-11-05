@@ -179,11 +179,36 @@ namespace EasyReloadGuard.Editor.Tests
         }
     }
 
-    sealed class UnverifiedAdapter : TestAdapterBase
+    sealed class UnverifiedAdapter : ReloadAdapter
     {
+        public override string Target => "com.unity.test-fixture";
         public override string[] VerifiedVersions => new[] { "never" };
 
         public override void Configure(ReloadAdapterBuilder builder) => builder.SelfHandled("测试依据");
+    }
+
+    sealed class TypeResetAdapter : TestAdapterBase
+    {
+        public override void Configure(ReloadAdapterBuilder builder) =>
+            builder.ResetType(typeof(OwnerFixture).AssemblyQualifiedName, OwnerFixture.Reset);
+    }
+
+    interface IConstraint { }
+    sealed class ConcreteConstraint : IConstraint { }
+    abstract class AbstractConstraint : IConstraint { }
+    class OpenConstraint<T> : IConstraint { }
+    static class ConstrainedHolder<T> where T : IConstraint
+    {
+        public static int Value;
+    }
+
+    sealed class GenericResetAdapter : TestAdapterBase
+    {
+        public override void Configure(ReloadAdapterBuilder builder)
+        {
+            builder.ResetGenericField(typeof(ConstrainedHolder<>).AssemblyQualifiedName, "Value");
+            builder.ResetGenericField(typeof(GenericHolder<>).AssemblyQualifiedName, "Value", typeArguments: () => new[] { typeof(int) });
+        }
     }
 
     sealed class DormantAdapter : ReloadAdapter
@@ -360,5 +385,71 @@ namespace EasyReloadGuard.Editor.Tests
     static class UnityInitializerFixture
     {
         public static readonly string ProductName = Application.productName;
+    }
+
+    static class ProofFixture
+    {
+        static readonly Dictionary<string, int> s_Lookup = new Dictionary<string, int> { { "a", 1 } };
+        static readonly List<int> s_Returned = new List<int>();
+        static readonly List<int> s_Local = new List<int>();
+        static readonly List<int> s_Linq = new List<int>();
+        static readonly Dictionary<int, MutableElement> s_MutableElements = new Dictionary<int, MutableElement>();
+        static readonly List<int> s_FromFactory = Create();
+        static readonly int[] s_Array = new int[2];
+        static readonly MutatingCollection s_Custom = new MutatingCollection();
+        static int s_Zero = 0;
+        static int s_Conditional = Environment.TickCount > 0 ? 1 : 0;
+
+        static List<int> Create() => new List<int> { 1 };
+        public static int Lookup(string key) => s_Lookup.TryGetValue(key, out var value) ? value : 0;
+        public static List<int> Returned => s_Returned;
+        public static void ThroughLocal() { var items = s_Local; items.Add(1); }
+        public static IEnumerable<int> ThroughLinq() => System.Linq.Enumerable.AsEnumerable(s_Linq);
+        public static MutableElement Element(int key) => s_MutableElements[key];
+        public static int Read() => s_FromFactory.Count + s_Array[0] + s_Custom.Count + s_Zero + s_Conditional;
+    }
+
+    sealed class MutableElement { public int Value; }
+
+    static class InitializerAliasFixture
+    {
+        static readonly List<int> s_Aliased;
+
+        static InitializerAliasFixture()
+        {
+            var scratch = new List<int> { 1 };
+            s_Aliased = InitializerAliasSource.Items;
+            GC.KeepAlive(scratch);
+        }
+
+        public static int Read() => s_Aliased.Count;
+    }
+
+    static class InitializerAliasSource
+    {
+        public static readonly List<int> Items = new List<int>();
+    }
+
+    sealed class MutatingCollection : List<int>
+    {
+        public new int Count { get { Add(1); return base.Count; } }
+    }
+
+    static class AsyncStopFixture
+    {
+        static CancellationTokenSource s_Stopped;
+        static CancellationTokenSource s_Forgotten;
+        public static void Start()
+        {
+            s_Stopped = new CancellationTokenSource();
+            s_Forgotten = new CancellationTokenSource();
+        }
+        [OnExitPlayMode]
+        public static void Stop()
+        {
+            s_Stopped.Cancel();
+            s_Stopped.Dispose();
+            s_Forgotten = null; // 置空没有取消工作。
+        }
     }
 }

@@ -21,7 +21,7 @@
 | --- | --- |
 | `Runtime/` | 运行时程序集 `EasyReloadGuard`：只有特性和 `PlaySession` 上的 `[Conditional("UNITY_EDITOR")]` 方法 |
 | `Editor/Core/` | 进入和停止 Play 时的执行、强制重新加载、停止后检查、与 Unity 版本相关的调用 |
-| `Editor/Audit/` | 静态检查：扫描范围、规则、读写位置分析、报告、遗留清单、命令行入口 |
+| `Editor/Audit/` | 静态检查：扫描范围、规则、读写位置分析、报告、暂缓清单、命令行入口 |
 | `Editor/Adapters/` | 适配器接口与内置适配器 |
 | `Editor/Settings/` | 设置、设置页、菜单、工具栏按钮、Skill 安装 |
 | `Tests/Editor/` | `EasyReloadGuard.Editor.Tests`（EditMode） |
@@ -36,7 +36,8 @@
 | `Runtime/PlaySession.cs` | 重置登记与 `RequestDomainReload`；Player 中调用被编译器删除 |
 | `Editor/Core/ReloadGuardBootstrap.cs` | 订阅 Play 状态变化，分发到关口、重置与释放 |
 | `Editor/Core/PrePlayGate.cs` | 进入 Play 前：待处理的重新加载请求、按设置检查并阻止或警告 |
-| `Editor/Core/ResetPipeline.cs` | 进入 Play 时执行重置，停止 Play 时执行释放；失败汇总并登记重新加载 |
+| `Editor/Core/EnterTiming.cs` | 进入时统计已加载场景并在最后一次 sceneClosed 重置；SubsystemRegistration 后备 |
+| `Editor/Core/ResetPipeline.cs` | 进入 Play 时执行重置，停止 Play 时执行释放；进入失败作废并最多重试一次；退出失败登记下次重新加载 |
 | `Editor/Core/ResetPlan.cs` | 从特性和适配器生成重置计划，按脚本加载缓存；只读反射，不触发静态构造 |
 | `Editor/Core/ResetSteps.cs` | 单个字段的重置步骤，`InitialValue` 初值的记录 |
 | `Editor/Core/ResetRules.cs` | 特性用法是否合法，泛型字段展开到具体类型 |
@@ -45,13 +46,14 @@
 | `Editor/Core/EditorCompat.cs` | **所有依赖 Unity 版本的调用**：Enter Play Mode 设置（以序列化字段为准）、取消进入 Play、延迟执行、引擎事件容器读取、工具栏显示 |
 | `Editor/Audit/ReloadAudit.cs` | 检查入口：扫描程序集、逐类型套用规则、写 `AuditReport.md` |
 | `Editor/Audit/AuditScope.cs` | 扫描范围：排除的包和程序集、适配器自行处理、目录排除标记 `.easyreloadguard-exclude` |
+| `Editor/Audit/ChangeProof.cs` | 字段与内容不变证明；只读白名单、不可变类型、无法证明的原因 |
 | `Editor/Audit/FieldAccessAnalyzer.cs`、`InitializerPurity.cs` | 只读 IL 分析：字段读写位置；静态构造是否只做纯初始化 |
 | `Editor/Audit/Finding.cs` | 规则编号 `RuleIds` 与面向人的问题类型名 `RuleIds.Title()` |
-| `Editor/Audit/Baseline.cs` | 已知遗留问题清单 `ProjectSettings/EasyReloadGuardBaseline.txt` 的读写 |
+| `Editor/Audit/Baseline.cs` | 暂缓问题清单 `ProjectSettings/EasyReloadGuardBaseline.txt` 的读写 |
 | `Editor/Audit/AuditReport.cs` | 报告模型与 Markdown 输出 |
-| `Editor/Audit/AdapterReview.cs` | 项目适配器跳过检查的类型：记录静态字段签名，与遗留清单中上次的记录比对（不按版本号判断） |
+| `Editor/Audit/AdapterReview.cs` | 项目适配器跳过检查的类型：仅对 SelfHandled 官方包记录静态字段签名，与暂缓清单中上次的记录比对（不按版本号判断） |
 | `Editor/Audit/ReloadGuardCli.cs` | `-executeMethod EasyReloadGuard.Editor.ReloadGuardCli.Audit`（CI） |
-| `Editor/Adapters/ReloadAdapter.cs` | 已安装包的来源与版本 `InstalledPackage`（只用于显示和内置适配器）；`ReloadAdapter` 与 `ReloadAdapterBuilder`（`ResetField`、`InvokeOnReset`、`InvokeOnExitPlayMode`、`OnReset`、`OnExitPlayMode`、`HandlesType`、`SelfHandled`、`KnownIssue`、`RequireDomainReload`） |
+| `Editor/Adapters/ReloadAdapter.cs` | 已安装包的来源与版本 `InstalledPackage`（只用于显示和内置适配器）；`ReloadAdapter` 与 `ReloadAdapterBuilder`（`ResetField`、`InvokeOnReset`、`InvokeOnExitPlayMode`、`OnReset`、`OnExitPlayMode`、`ResetType`、`ResetGenericField`、`SelfHandled`、`KnownIssue`、`RequireDomainReload`） |
 | `Editor/Adapters/BuiltInAdapters.cs` | 内置适配器及其复核版本和依据 |
 | `Editor/Settings/ReloadGuardSettings.cs` | 项目设置 `ProjectSettings/EasyReloadGuardSettings.asset` |
 | `Editor/Settings/ReloadGuardSettingsProvider.cs`、`ReloadGuardStyles.cs` | 设置页 |
@@ -63,18 +65,23 @@
 | 文件 | 说明 |
 | --- | --- |
 | `ProjectSettings/EasyReloadGuardSettings.asset` | 项目设置，纳入版本管理 |
-| `ProjectSettings/EasyReloadGuardBaseline.txt` | 已知遗留问题清单，由设置页按钮生成，纳入版本管理 |
+| `ProjectSettings/EasyReloadGuardBaseline.txt` | 暂缓问题清单，由设置页按钮生成，纳入版本管理 |
 | `Library/EasyReloadGuard/AuditReport.md` | 最近一次检查报告 |
 | `Library/EasyReloadGuard/ResidueReport.md` | 最近一次停止后检查报告 |
+| `Library/EasyReloadGuard/ResetFailureReport.md` | 最近一次进入重置失败及作废记录 |
 | `~/.claude/skills/easy-reload-guard`、`~/.codex/skills/easy-reload-guard` | 安装的 Skill，目录中的 `.easyreloadguard-skill` 第一行是安装时的内容哈希，第二行是包版本 |
 
 ## 修改本包时
 
 - **不能影响打包后的逻辑**：运行时程序集不加可读取的状态、启动入口或回调；新功能放在 Editor 程序集。
 - 依赖 Unity 版本语义的调用集中写在 `EditorCompat`，并在 README 第 10 节记录实测结论。
-- 面向人的文字（报告、Console、设置页、文档）用问题类型名和直白描述，不用规则编号和内部代称；规则编号只出现在遗留清单的行和 README 附录。
-- 新增规则或改变遗留清单的行格式时，保证已有清单继续有效，或在 CHANGELOG 中写明迁移方式。
+- 面向人的文字（报告、Console、设置页、文档）用问题类型名和直白描述，不用规则编号和内部代称；规则编号只出现在暂缓清单的行和 README 附录。
+- 新增规则或改变暂缓清单的行格式时，保证已有清单继续有效，或在 CHANGELOG 中写明迁移方式。
 - 新文件要有 `.meta`，`~` 结尾的目录除外。
 - 使用方多是基于包开发、包更新频繁，且常用 Git tag 或提交号引用、很少改 `package.json` 版本。需要识别“内容是否变了”时按内容判断（如静态字段签名、文件哈希），不要依赖版本号。
 - 每次修改：在 `package.json` 更新版本，在 CHANGELOG 记录改动和实际验证情况（编译、测试、实测分别写，没做的写“未验证”）；同步 README、接入手册和 Skill 中受影响的内容。
 - 验证：编译；运行 `EasyReloadGuard.Editor.Tests`；涉及 Play 流程时，关闭 Domain Reload 连续 Play → Stop 实测。用脚本切换 Domain Reload 时要同时写入 `EditorSettings.asset` 的 `m_EnterPlayModeOptionsEnabled`。
+
+## 0.5.0 边界
+
+按规范判定，暂缓仍不符合；HandlesType 已删除，SelfHandled 仅 Unity 官方来源。ResetType 和 ResetGenericField 声明处理责任。全局写入索引、运行时一致性比对、ScriptableObject 内容检查是后续阶段，不能声称已实现。编译/刷新/运行的验证仍服从当前用户和项目授权，修改包不自动增加运行权限。

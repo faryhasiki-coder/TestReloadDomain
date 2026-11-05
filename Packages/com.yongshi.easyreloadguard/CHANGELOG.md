@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.5.0] - 2026-11-05
+
+按规范判定的第一阶段实现（不兼容升级）：
+
+- 检查结论统一为“不符合规范”，建议单独计数；暂缓仍计入不符合，只影响进入 Play 的关口。只有未处理字段和 KnownIssue 可暂缓，声明错误、覆盖遗漏、ReloadSafe 证明失败、异步规范和无法分析等不可暂缓。
+- 新增类型内“不变”证明：私有写入分析、不可变内容和 BCL 只读白名单；局部变量/返回/传参/LINQ 逃逸、自定义同名集合方法和不能确认独占的初值不能获得证明。非私有可变字段等待第二阶段全局索引，不自行放行。
+- Default 不接受非默认初值，Clear 不接受填充过或无法证明为空的集合；ResetMethod / InvokeOnReset 逐字段核对覆盖。取消业务 SubsystemRegistration 和 InitializeOnEnterPlayMode 的整体豁免，后者须交给包重复执行。
+- 删除 HandlesType，没有兼容壳。新增 ResetType 和 ResetGenericField（单参数接口/基类约束或 `Func<IEnumerable<Type>>` 实参列表）；SelfHandled 只接受 BuiltIn 或 Unity 默认注册表来源，内置未复核版本继续扫描。
+- RequireDomainReload 在报告中明确目标静态字段通过脚本重载恢复；异步资源规则继续检查。删除非官方 Unity MCP 的内置豁免；工程 UniTask 临时适配器保留实际回调清理，删除整包豁免。
+- 进入方向最后一个 sceneClosed 执行一次重置；SubsystemRegistration 保留后备并提示退回。纯初始化类型首次 ExitingEditMode 提前采集初值；不纯类型报告“初值可能不干净”。采集失败不标记成功，并进入失败汇总。
+- 进入重置失败作废本次 Play：按设置退出并最多自动重载重试一次，重试仍失败只退出；下次手动进入可重新尝试。失败记录写 Console 和最近一次 ResetFailureReport.md。停止释放失败继续登记下次进入前重载。
+- CLI 使用 `pending` / `violation`，旧 error/warning 参数删除，未知值按参数错误处理。README、接入手册、包内 Skill、索引与正式测试源码同步。
+
+迁移：先清空旧 `ProjectSettings/EasyReloadGuardBaseline.txt`，按新检查重新处理；旧 ReloadSafe 漂移复核行不能作为暂缓。HandlesType 逐项改成 ResetField / ResetType / ResetGenericField / InvokeOnReset，能证明不变的才可直接删除旧声明。不要把它们批量换成空 ResetType 动作。本工程清单已清空，复现案例故意保留的字段问题需要新检查后重新列入，当前尚未重新生成。Origins 只生成迁移清单，不修改该工程。
+
+验证范围：完成源码和调用签名核对、C# 9 语法解析、差异检查与包内 Skill 校验；未执行 Unity 编译、导入/刷新、EditMode 测试、Play/Stop 或 Player 构建。测试源码已迁移并增加证明、暂缓、泛型、适配器来源、覆盖及初值用例，不宣称用例运行通过。sceneClosed 新流程（含未保存/多场景/Scene Reload 关闭）、失败重试和 Package Manager 来源读取仍待 Unity 实测。
+
+后续阶段：0.5.0 尚无进入 Play 后自动一致性比对、全局字段写入索引与 ScriptableObject 内容检查；ResetType 的实际动作结果必须靠运行验收。本条不把旧版本的实验当作新版验收。
+
 ## [0.4.3] - 2026-11-05
 
 文档与 Agent Skill：补充写新代码时的编码规范，把只适用于接入已有代码的限制单独列出（包代码、检查规则、设置不变）：

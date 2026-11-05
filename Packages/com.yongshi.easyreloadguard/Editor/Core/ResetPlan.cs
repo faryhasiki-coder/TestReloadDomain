@@ -22,22 +22,35 @@ namespace EasyReloadGuard.Editor
         public readonly List<string> RequiredReloadReasons = new List<string>();
 
         readonly HashSet<string> m_HandledFields = new HashSet<string>(StringComparer.Ordinal);
-        readonly HashSet<Type> m_ManagedTypes = new HashSet<Type>();
+        readonly Dictionary<Type, List<MethodInfo>> m_EnterMethods = new Dictionary<Type, List<MethodInfo>>();
+        readonly Dictionary<Type, List<MethodInfo>> m_ExitMethods = new Dictionary<Type, List<MethodInfo>>();
+        readonly HashSet<Type> m_ResetTypes = new HashSet<Type>();
+        readonly HashSet<string> m_ReloadTargets = new HashSet<string>(StringComparer.Ordinal);
         readonly Dictionary<string, AdapterStatus> m_SelfHandledTargets = new Dictionary<string, AdapterStatus>(StringComparer.Ordinal);
-
-        /// <summary>项目适配器用 HandlesType 跳过检查的类型、声明它的适配器与依据。检查器记录其中的静态字段，变化时提醒复核。</summary>
-        public readonly List<(Type Type, AdapterStatus Adapter, string Evidence)> ReviewedTypes =
-            new List<(Type, AdapterStatus, string)>();
 
         public static ResetPlan Current => s_Current ?? (s_Current = BuildFromProject());
 
         public bool IsFieldHandled(FieldInfo field) => m_HandledFields.Contains(ReflectionUtil.Subject(field));
 
-        public bool IsOwnerManaged(Type type) => m_ManagedTypes.Contains(type);
+        /// <summary>类型由进入 Play 时调用的重置方法（[ResetMethod] 或适配器 InvokeOnReset）负责，或由适配器 ResetType 整体负责。</summary>
+        public bool IsOwnerManaged(Type type) => m_EnterMethods.ContainsKey(type) || m_ResetTypes.Contains(type);
+
+        /// <summary>适配器用 ResetType 声明由一个动作恢复全部静态字段的类型。</summary>
+        public bool IsResetType(Type type) => m_ResetTypes.Contains(type);
+
+        /// <summary>声明在该类型中、进入 Play 时由本包调用的重置方法（特性与适配器）。</summary>
+        public IReadOnlyList<MethodInfo> EnterMethodsOf(Type type) =>
+            m_EnterMethods.TryGetValue(type, out var methods) ? methods : (IReadOnlyList<MethodInfo>)Array.Empty<MethodInfo>();
+
+        /// <summary>声明在该类型中、停止 Play 时由本包调用的释放方法（特性与适配器）。</summary>
+        public IReadOnlyList<MethodInfo> ExitMethodsOf(Type type) =>
+            m_ExitMethods.TryGetValue(type, out var methods) ? methods : (IReadOnlyList<MethodInfo>)Array.Empty<MethodInfo>();
 
         public bool IsSelfHandled(string target) => m_SelfHandledTargets.ContainsKey(target);
 
-        /// <summary>声明该包或程序集自行处理的项目适配器；内置适配器或未声明时为 null。</summary>
+        public bool RequiresReload(string target) => m_ReloadTargets.Contains(target);
+
+        /// <summary>声明该包自行处理的项目适配器；内置适配器或未声明时为 null。</summary>
         public AdapterStatus ProjectSelfHandler(string target) =>
             m_SelfHandledTargets.TryGetValue(target, out var status) && !status.BuiltIn ? status : null;
 
@@ -116,7 +129,7 @@ namespace EasyReloadGuard.Editor
             }
             else
             {
-                Findings.Add(new Finding(RuleIds.InvalidDeclaration, Severity.Error,
+                Findings.Add(new Finding(RuleIds.InvalidDeclaration, Severity.Violation,
                     ReflectionUtil.Subject(prop),
                     "[ResetStatic] 在属性上只支持自动属性（需编译器生成 backing field）；手写属性请标记底层字段"));
             }
@@ -139,7 +152,7 @@ namespace EasyReloadGuard.Editor
             }
             else
             {
-                Findings.Add(new Finding(RuleIds.InvalidDeclaration, Severity.Error,
+                Findings.Add(new Finding(RuleIds.InvalidDeclaration, Severity.Violation,
                     ReflectionUtil.Subject(evt),
                     "[ResetStatic] 在事件上只支持字段式事件（field-like event）；自定义 add/remove 事件请标记底层字段"));
             }
@@ -150,11 +163,21 @@ namespace EasyReloadGuard.Editor
             m_HandledFields.Add(ReflectionUtil.Subject(field));
             if (field.DeclaringType.IsGenericTypeDefinition)
             {
-                ExpandGenericField(field, mode, source);
+                ExpandGenericField(field, mode, source, null);
                 return;
             }
 
             if (TryCreateFieldStep(field, mode, source, out var step)) FieldSteps.Add(step);
+        }
+
+        /// <summary>
+        /// 适配器 ResetGenericField：泛型定义上的字段，按给出的类型实参或泛型约束展开到闭合类型。
+        /// typeArguments 为 null 时按约束枚举。
+        /// </summary>
+        internal void AddGenericField(FieldInfo openField, ResetMode mode, string source, IEnumerable<Type> typeArguments)
+        {
+            m_HandledFields.Add(ReflectionUtil.Subject(openField));
+            ExpandGenericField(openField, mode, source, typeArguments);
         }
 
         internal void AddMethod(MethodInfo method, int order, bool onEnter, string source)
@@ -168,32 +191,42 @@ namespace EasyReloadGuard.Editor
 
             var step = new ActionStep(Prefix(source) + ReflectionUtil.Describe(method), order, () => method.Invoke(null, null));
             (onEnter ? EnterSteps : ExitSteps).Add(step);
-            if (onEnter) m_ManagedTypes.Add(method.DeclaringType);
+            var byType = onEnter ? m_EnterMethods : m_ExitMethods;
+            if (!byType.TryGetValue(method.DeclaringType, out var methods)) byType[method.DeclaringType] = methods = new List<MethodInfo>();
+            if (!methods.Contains(method)) methods.Add(method);
         }
 
         internal void AddAction(string source, string name, Action action, int order, bool onEnter)
         {
             if (action == null || string.IsNullOrWhiteSpace(name))
             {
-                Findings.Add(new Finding(RuleIds.AdapterBroken, Severity.Error, source, "OnReset/OnExitPlayMode 需要非空名称与动作"));
+                Findings.Add(new Finding(RuleIds.AdapterBroken, Severity.Violation, source, "OnReset/OnExitPlayMode/ResetType 需要非空名称与动作"));
                 return;
             }
 
             (onEnter ? EnterSteps : ExitSteps).Add(new ActionStep(Prefix(source) + name, order, action));
         }
 
-        internal void MarkOwnerManaged(Type type, AdapterStatus adapter = null, string evidence = null)
+        /// <summary>适配器 ResetType：该类型的全部静态字段由一个动作恢复。检查器认定为已处理。</summary>
+        internal void AddResetType(Type type, string source, Action action, int order)
         {
-            if (!m_ManagedTypes.Add(type) || adapter == null || adapter.BuiltIn) return;
-            ReviewedTypes.Add((type, adapter, evidence));
+            if (action == null)
+            {
+                Findings.Add(new Finding(RuleIds.AdapterBroken, Severity.Violation, source, $"ResetType（{ReflectionUtil.TypeName(type)}）需要非空的重置动作"));
+                return;
+            }
+
+            m_ResetTypes.Add(type);
+            EnterSteps.Add(new ActionStep(Prefix(source) + ReflectionUtil.TypeName(type) + " 的全部静态字段", order, action));
         }
 
         internal void MarkSelfHandled(string target, AdapterStatus adapter) => m_SelfHandledTargets[target] = adapter;
 
-        internal void RequireReload(string source, string reason)
+        internal void RequireReload(string source, string reason, string target)
         {
+            m_ReloadTargets.Add(target);
             RequiredReloadReasons.Add(Prefix(source) + reason);
-            Findings.Add(new Finding(RuleIds.AdapterRequiresReload, Severity.Info, source,
+            Findings.Add(new Finding(RuleIds.AdapterRequiresReload, Severity.Suggestion, source,
                 $"关闭 Domain Reload 时，每次进入 Play 前都会先重新加载脚本：{reason}"));
         }
 
@@ -213,7 +246,7 @@ namespace EasyReloadGuard.Editor
             }
             catch (Exception e)
             {
-                Findings.Add(new Finding(RuleIds.AdapterBroken, Severity.Error, adapterType.FullName,
+                Findings.Add(new Finding(RuleIds.AdapterBroken, Severity.Violation, adapterType.FullName,
                     $"无法初始化适配器（需要公开无参构造与非空 Target）：{e.GetBaseException().Message}"));
                 return;
             }
@@ -226,6 +259,7 @@ namespace EasyReloadGuard.Editor
                 {
                     if (!packages.TryGetValue(adapter.Target, out var package)) return; // 目标不存在：适配器休眠
                     status.InstalledVersion = package.Describe();
+                    status.FromUnityRegistry = package.FromUnityRegistry;
                     version = package.Version;
                 }
                 else
@@ -241,9 +275,9 @@ namespace EasyReloadGuard.Editor
                     status.Verified = Array.IndexOf(verified, version) >= 0;
                     if (!status.Verified)
                     {
-                        Findings.Add(new Finding(RuleIds.AdapterUnverified, Severity.Warning, status.Name,
-                            $"内置适配器复核过的 {adapter.Target} 版本为 [{string.Join(", ", verified)}]，当前为 {status.InstalledVersion}。" +
-                            "请升级 Easy Reload Guard，或联系本包维护者复核该版本。"));
+                        Findings.Add(new Finding(RuleIds.AdapterUnverified, Severity.Violation, status.Name,
+                            $"内置适配器复核过的 {adapter.Target} 版本为 [{string.Join(", ", verified)}]，当前为 {status.InstalledVersion}，" +
+                            "这个版本还没有复核，不能按复核结论信任。请升级 Easy Reload Guard，或联系本包维护者复核该版本。"));
                     }
                 }
 
@@ -251,7 +285,7 @@ namespace EasyReloadGuard.Editor
             }
             catch (Exception e)
             {
-                Findings.Add(new Finding(RuleIds.AdapterBroken, Severity.Error, status.Name,
+                Findings.Add(new Finding(RuleIds.AdapterBroken, Severity.Violation, status.Name,
                     $"适配器执行失败：{e.GetBaseException().Message}"));
             }
         }
@@ -277,10 +311,19 @@ namespace EasyReloadGuard.Editor
             return true;
         }
 
-        void ExpandGenericField(FieldInfo openField, ResetMode mode, string source)
+        /// <summary>
+        /// 泛型定义上的字段展开到闭合类型：给出类型实参时按实参；否则合并“派生类型基类链上出现的闭合构造”与“按泛型约束枚举”。
+        /// 一个闭合类型也找不到时，字段在未知的闭合类型上没有处理方式，报告为不符合规范。
+        /// </summary>
+        void ExpandGenericField(FieldInfo openField, ResetMode mode, string source, IEnumerable<Type> typeArguments)
         {
+            var definition = openField.DeclaringType;
+            var closedTypes = typeArguments != null
+                ? ResetRules.Close(definition, typeArguments, out var invalid)
+                : ResetRules.FindClosedConstructions(definition).Union(ResetRules.CloseByConstraints(definition, out invalid)).ToList();
+
             var count = 0;
-            foreach (var closedType in ResetRules.FindClosedConstructions(openField.DeclaringType))
+            foreach (var closedType in closedTypes)
             {
                 var field = closedType.GetField(openField.Name, ReflectionUtil.StaticMembers);
                 if (field != null && TryCreateFieldStep(field, mode, source, out var step))
@@ -291,14 +334,16 @@ namespace EasyReloadGuard.Editor
             }
 
             var subject = ReflectionUtil.Subject(openField);
-            const string hint = "直接使用、未经派生类出现的闭合类型无法静态发现，需在 Editor 适配器中按闭合类型用 ResetField 声明（不要在业务代码中插入登记）。";
+            if (invalid != null) Findings.Add(new Finding(RuleIds.AdapterBroken, Severity.Violation, source ?? subject, Prefix(source) + invalid));
+            const string hint = "不经派生类、也不满足可枚举约束的闭合类型无法自动发现，需要在 Editor 适配器中用 ResetGenericField 给出类型实参，" +
+                                "或按闭合类型用 ResetField 声明（不要在业务代码中插入登记）。";
             Findings.Add(count == 0
-                ? new Finding(RuleIds.GenericExpansion, Severity.Warning, subject, "泛型静态字段没有找到任何闭合构造，未生成重置步骤。" + hint)
-                : new Finding(RuleIds.GenericExpansion, Severity.Info, subject, $"泛型静态字段已展开 {count} 个由派生类型确定的闭合构造。" + hint));
+                ? new Finding(RuleIds.GenericExpansion, Severity.Violation, subject, "泛型静态字段没有找到任何闭合类型，没有生成重置步骤。" + hint)
+                : new Finding(RuleIds.GenericExpansion, Severity.Suggestion, subject, $"泛型静态字段已展开 {count} 个闭合类型。" + hint));
         }
 
         static Finding Declaration(MemberInfo member, string source, string message) =>
-            new Finding(RuleIds.InvalidDeclaration, Severity.Error, ReflectionUtil.Subject(member), Prefix(source) + message);
+            new Finding(RuleIds.InvalidDeclaration, Severity.Violation, ReflectionUtil.Subject(member), Prefix(source) + message);
 
         static string Prefix(string source) => source == null ? string.Empty : $"[{source}] ";
     }

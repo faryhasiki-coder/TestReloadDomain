@@ -64,6 +64,7 @@ namespace EasyReloadGuard
 
 #if UNITY_EDITOR
         static int s_Id;
+        static bool s_Begun;
 
         /// <summary>本次脚本加载后的第几次 Play，仅用于 Editor 日志；尚未进入过 Play 时为 0。</summary>
         internal static int Id => s_Id;
@@ -71,15 +72,26 @@ namespace EasyReloadGuard
         /// <summary>RegisterReset / RegisterPersistentReset 的登记表，进入 Play 时由 Editor 取出执行。</summary>
         internal static readonly ResetRegistry Resets = new ResetRegistry();
 
-        /// <summary>由 Editor 程序集设置，进入 Play 的 SubsystemRegistration 阶段调用。</summary>
+        /// <summary>由 Editor 程序集设置，进入 Play 的 SubsystemRegistration 阶段调用（重置的后备时机与失败处理）。</summary>
         internal static Action EditorEnterPlayHook;
 
         internal static string PendingReloadReason;
 
+        /// <summary>开始一次 Play 的计数。Editor 在更早的时机执行重置时先调用；同一次 Play 只计一次。</summary>
+        internal static void BeginPlay()
+        {
+            if (s_Begun) return;
+            s_Begun = true;
+            s_Id++;
+        }
+
+        /// <summary>允许下一次 Play 重新计数，由 Editor 在退出编辑模式前调用。</summary>
+        internal static void EndPlay() => s_Begun = false;
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void OnSubsystemRegistration()
         {
-            s_Id++;
+            BeginPlay();
             EditorEnterPlayHook?.Invoke();
         }
 #endif

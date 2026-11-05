@@ -54,6 +54,9 @@ namespace EasyReloadGuard.Editor
         /// <summary>InitialValue 尚未记录基准值；在已运行过 Play 的域中首次记录会拿到脏值。</summary>
         public bool NeedsCleanBaseline => Mode == ResetMode.InitialValue && !m_Observed;
 
+        /// <summary>已经观察过初值（提前在 ExitingEditMode，或第一次重置时）。</summary>
+        public bool Observed => m_Observed;
+
         public override void Execute()
         {
             if (!m_Observed) Observe();
@@ -74,15 +77,19 @@ namespace EasyReloadGuard.Editor
         }
 
         /// <summary>
-        /// 首次执行时观察初值：InitialValue 记为基准值；Default 模式下初值非 default 往往意味着选错了模式。
-        /// 只有 InitialValue 长期持有初值，Default/Clear 不保留字段曾引用的对象。
+        /// 观察初值（提前在脚本加载后第一次 Play 的 ExitingEditMode，或首次执行时）：InitialValue 记为基准值；
+        /// Default 模式下初值非 default 往往意味着选错了模式。只有 InitialValue 长期持有初值，Default/Clear 不保留字段曾引用的对象。
         /// </summary>
-        void Observe()
+        internal void Observe()
         {
-            m_Observed = true;
-            if (Mode == ResetMode.Clear) return;
+            if (Mode == ResetMode.Clear)
+            {
+                m_Observed = true;
+                return;
+            }
 
             var value = Field.GetValue(null);
+            m_Observed = true;
             if (Mode == ResetMode.InitialValue)
             {
                 m_Initial = value;

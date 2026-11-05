@@ -8,7 +8,7 @@ namespace EasyReloadGuard
         /// <summary>写回 default(T)：引用置 null，值类型归零。不可用于 readonly 字段。</summary>
         Default,
 
-        /// <summary>写回本次域加载后首次进入 Play 时观察到的值（通常即字段初值）。仅限值类型与 string。</summary>
+        /// <summary>写回本次脚本加载后记录的初值。纯初始化类型在首次 ExitingEditMode 提前记录，其余在首次重置时记录并提示局限。仅限值类型与 string。</summary>
         InitialValue,
 
         /// <summary>对字段当前值调用无参 Clear()，保留引用本身。适合 readonly 集合。</summary>
@@ -34,7 +34,7 @@ namespace EasyReloadGuard
     /// <summary>
     /// 进入 Play 时调用的静态无参 void 方法，在全部字段重置之后按 Order 升序执行。方法须幂等且同步完成。
     /// 声明该方法的类型视为自行管理其全部静态状态；检查器核对重置方法（含其调用的类型内方法）
-    /// 是否处理了每个可变静态字段，漏掉时报告“重置方法漏掉了字段”，有意保留的字段用 [ReloadSafe] 说明。
+    /// 是否处理了每个不能证明不变的字段，漏掉时报告“重置方法漏掉了字段”；不能靠 [ReloadSafe] 豁免可变状态。
     /// 业务没有现成的重置入口时，可在该类型中新增只在 Editor 编译的方法：方法连同特性整体放在 #if UNITY_EDITOR 内，
     /// 只把本类型的静态状态恢复为新域首次进入 Play 时的样子，不调用业务流程，也不被业务代码调用。Player 中不存在该方法。
     /// </summary>
@@ -66,7 +66,8 @@ namespace EasyReloadGuard
     }
 
     /// <summary>
-    /// 声明静态状态有意保留到下一次 Play（如纯计算缓存、编辑器偏好）。必须给出非空原因，检查器会校验。
+    /// 为检查器能证明初始化后不变的字段说明原因。不能豁免可变状态，纯计算缓存同样需要重置。
+    /// 类型与程序集上的声明也逐字段证明；原因必须非空。证明不了时属于不符合规范，不能暂缓。
     /// </summary>
     [AttributeUsage(
         AttributeTargets.Assembly | AttributeTargets.Class | AttributeTargets.Struct | AttributeTargets.Field,

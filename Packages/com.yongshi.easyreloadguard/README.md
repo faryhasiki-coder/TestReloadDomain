@@ -2,9 +2,11 @@
 
 在 Unity 中关闭 Domain Reload（Project Settings → Editor → Enter Play Mode Settings）可以让进入 Play 快很多，代价是：**静态变量不会在每次 Play 时恢复初值**。本包帮你做三件事：
 
-1. **找出来**：扫描项目和包里的静态字段，列出哪些会把上一次 Play 的数据带到下一次。
+1. **找出来**：扫描项目和包里的静态字段，按规范判定每个静态字段是否有本包执行的重置，或能证明初始化之后不变。
 2. **恢复它**：在静态字段上加特性，进入 Play 时自动恢复；停止 Play 时调用你指定的释放方法。
 3. **验证它**：每次停止 Play 后自动检查，有没有字段还引用已销毁的对象、有没有订阅或集合每次 Play 都在增加。
+
+**0.5.0 第一阶段**：检查结论分为“不符合规范”和不计入结论的“建议”；暂缓仍然不符合。进入 Play 后的一致性比对、全局写入索引、ScriptableObject 内容检查尚未实现。
 
 写新代码时，先看第 2.2 节的编码规范：按规范写的代码不需要事后处理。处理某份检查报告时，请看[接入手册](Documentation~/接入手册.md)：其中说明了每类问题该谁改、怎么改，以及改完后如何证明。版本变化和验证记录见 [CHANGELOG](CHANGELOG.md)。
 
@@ -43,18 +45,26 @@ Player（打包后的游戏）每次启动都会重新加载全部脚本，不�
 
 ### 2.2 写新代码：编码规范
 
-目标：新代码在关闭和开启 Domain Reload 时行为一致，检查不报新问题，不进已知遗留清单。下面这些也是打包后登出重进、切场景、重复初始化的正确写法，所以写新代码时可以按需设计初始化、停止、取消等业务方法，不受 2.3 的改动限制。
+参照物是开启 Domain Reload 时的状态：进入 Play 前，静态字段等于脚本刚加载时的值。优先把运行时状态放在实例中；保留的静态状态必须由本包重置，或由检查器证明不变。目标是没有不符合项，不依靠暂缓清单通过。
 
-1. **先不用静态**：Play 中产生的状态放在负责它的对象实例上（MonoBehaviour，或由启动流程创建并持有的服务），随对象创建和销毁。静态只留给常量、内容不变的计算缓存，以及工程统一的单例和事件中心入口。
-2. **声明时就处理**：每个可变静态成员写下时就按第 3 节选定处理方式并加上特性，不留没有标注的可变静态；能写成 `const`、`static readonly` 的就写。
-3. **初始化可以重复执行**：每次 Play 都要做的初始化放在 `Awake`、`Start` 或业务的 `Init` 中，不放在静态构造或字段初值中（关闭 Domain Reload 时只执行一次）。`Init` 重复调用不会重复订阅、重复创建；“已初始化”标记要加 `[ResetStatic]`。
-4. **订阅成对**：`+=` 与 `-=` 写在对称的生命周期中：`OnEnable`/`OnDisable`、`Awake`/`OnDestroy`、`Init`/`Shutdown`。不在静态构造或 `[InitializeOnLoad]` 中订阅运行时事件。
-5. **资源有负责者和停止方法**：线程、计时器、Socket、下载、原生资源由一个对象创建，并由它的 `Stop`、`Dispose` 或 `Shutdown` 释放。停止方法可以重复调用，由业务的退出流程（销毁、切场景、登出、`Application.quitting`）调用；静态入口的服务给这个停止方法加 `[OnExitPlayMode]`。
-6. **异步由发起者取消**：发起时取得令牌并沿调用链传递，`await` 之后写状态前检查，不用 `async void`（见第 3 节“异步任务”）。`Task`、`CancellationTokenSource` 不放在静态字段中，放在负责的实例上，由它的停止方法取消。
-7. **单例沿用工程的基类**：`Instance` 在 `Awake` 中赋值、在 `OnDestroy` 中是自己时置 null，字段加 `[ResetStatic]`。纯 C# 单例由启动流程创建，并配有停止方法。
-8. **分清缓存和 Play 中的状态**：内容只由输入决定、下一次 Play 仍然正确的计算缓存用 `[ReloadSafe("原因")]`；装了 Play 中对象的对象池、注册表要在下一次 Play 前清空（`Clear` 或重置方法），其中的 Unity 对象已随场景销毁。
-9. **ScriptableObject 不存运行时状态**：不把 Play 中的数据写回资产实例；需要运行时状态时用 `Instantiate` 出的副本或单独的运行时对象。资产的 `OnEnable` 只在加载时执行一次，不能当作每次 Play 的初始化。
-10. **Editor 代码只在脚本加载时订阅**：`EditorApplication` 等编辑器事件在 `[InitializeOnLoad]` 的静态构造中订阅一次；在每次进入 Play 都会执行的代码中订阅，处理器会越积越多。
+| # | 规范 | 当前判定方式 |
+| --- | --- | --- |
+| 1 | 每个可变静态字段有明确处理方式 | 静态：特性或适配器声明；业务在 Awake、Init、SubsystemRegistration 中自行赋值不算处理 |
+| 2 | 重置方式与初值匹配 | 静态：非默认初值不用 Default，填充过或无法证明为空的集合不用 Clear |
+| 3 | ResetMethod 负责类型内全部不能证明不变的字段 | 静态覆盖检查；实际重置结果需运行验收，自动一致性比对是后续阶段 |
+| 4 | ReloadSafe 只说明检查器能证明不变的字段 | 静态：逐字段证明；类型或程序集标记也不整体豁免 |
+| 5 | 不用 async void | 静态：带异步状态机且返回 void 即不符合 |
+| 6 | Task、取消源、线程、计时器放在实例上 | 静态入口服务例外：同一类型的退出方法必须对对应字段调用 Cancel 或 Dispose；字段仍需重置 |
+| 7 | ScriptableObject 不存运行时状态 | 当前靠验收；序列化内容检查留到后续阶段 |
+| 8 | 令牌沿异步调用链传递，await 后写状态前检查取消 | 运行验收 |
+| 9 | 订阅、线程、计时器和外部资源由业务停止方法释放 | 停止后检查和验收；不限制 += / -= 的代码形状 |
+| 10 | Editor 事件只在脚本加载时订阅一次 | 停止后检查增长情况 |
+
+初始化和停止方法应可重复执行。纯计算缓存也需要重置：运行中填入的数据不等于脚本刚加载时的数据。
+
+**能证明不变**：const、readonly 不再赋值；非 readonly 的字段在第一阶段必须私有，且类型内没有初始化以外的赋值。内容还必须不可变：基础值类型、string、Type、委托、递归满足条件的结构体，或所有实例字段 readonly 且内容不可变的密封类。集合和数组必须私有、元素不可变、初始化后每次使用均在只读白名单中。白名单包括 BCL 集合的 TryGetValue、Contains/ContainsKey/ContainsValue、索引读取、Count/Length、GetEnumerator、IndexOf、Keys/Values 的读取；数组支持长度和元素读取。自定义同名方法、传参、返回集合、局部变量转手、LINQ 延迟枚举或无法确认的初值来源均不能作为证明。证明失败需要声明重置，不能用文字依据放行。
+
+**重置由本包执行**：SubsystemRegistration 的业务初始化不豁免字段；InitializeOnEnterPlayMode 方法必须同时标 ResetMethod（或由适配器 InvokeOnReset 指定），由包在字段重置后再执行一次，方法必须可重复调用。不能改变业务初始化阶段来规避检查。
 
 ### 2.3 接入已有代码：改动边界
 
@@ -83,18 +93,18 @@ public class GameManager : MonoBehaviour
 
 | 静态状态 | 写法 |
 | --- | --- |
-| 单例、普通静态字段 | `[ResetStatic]`：引用置 null，数值归零 |
+| 初值为 default 的单例、普通静态字段 | `[ResetStatic]`：引用置 null，数值归零 |
 | 有非默认初值的数值或 string | `[ResetStatic(ResetMode.InitialValue)]`：恢复为第一次进入 Play 时的值 |
-| `static readonly` 集合 | `[ResetStatic(ResetMode.Clear)]` |
+| 初始内容为空、仅运行中增删的集合 | `[ResetStatic(ResetMode.Clear)]`；有初始内容时用重置方法恢复 |
 | 静态事件、自动属性 | `[field: ResetStatic]` |
 | 几个字段需要一起恢复（对象池、注册表等） | 在类型中写一个静态无参方法并加 `[ResetMethod(order)]`。加了之后，整个类型都由这个方法负责，检查器会逐个核对类型中的字段是否都已处理。没有现成方法时，可以新增一个只在 Editor 编译的方法（见接入手册第 4 节） |
 | 订阅、线程、计时器、Socket、Native 内存 | 在业务的停止或释放方法（如 `Stop()`，业务流程本身也会调用）上加 `[OnExitPlayMode(order)]`，停止 Play 时调用。写新代码时按 2.2 设计这个方法；接入已有代码时只加在已有方法上，缺少释放是业务缺陷，按 2.3 处理。第三方代码在 Editor 适配器中调用它自带的清理方法 |
-| 有意保留到下一次 Play 的状态 | `[ReloadSafe("原因")]`，可加在字段、类型或程序集上，原因必填。加在字段或类型上之后，如果字段仍在 Play 中被修改，检查器会提醒你重新确认原因 |
-| 泛型单例 `Singleton<T>.s_Instance` | 在泛型定义的字段上加 `[ResetStatic]`，会自动展开到所有派生类用到的具体类型。业务直接使用的具体类型（如 `EventBus<EnemyKilled>`），需要在 Editor 适配器中补充：`b.ResetField(typeof(EventBus<EnemyKilled>).AssemblyQualifiedName, "s_Handlers")` |
+| 检查器能证明不变的字段 | 不需要特性；可用 `[ReloadSafe("原因")]` 说明。证明不了即不符合且不能暂缓 |
+| 泛型静态字段 | 在泛型定义字段上加 `[ResetStatic]`：合并派生类与单参数接口/基类约束枚举；直接使用且无法枚举的类型用适配器 `ResetGenericField` 提供类型实参，或对闭合类型用 `ResetField` |
 | ScriptableObject 等 `OnEnable` 只执行一次的实例状态 | 特性只处理静态成员。写新代码时不把运行时数据写回资产（2.2 第 9 条）；已有代码在 Editor 适配器中用 `OnReset` 找到已加载的实例，调用它已有的入口（例如重新执行 `OnEnable`，效果等同开启 Domain Reload）。不要在业务的 `OnEnable` 中加登记代码 |
 | 异步任务、后台循环 | 由发起它的业务代码负责取消，见下文。业务的停止方法可以加 `[OnExitPlayMode]` |
 
-注意 `ResetMode.Default` 的陷阱：`static float s_Speed = 1f` 加 `[ResetStatic]` 后会被重置为 0。第一次进入 Play 时，如果发现字段的值不是默认值，Console 会给出警告。
+注意 `ResetMode.Default` 的陷阱：`static float s_Speed = 1f` 加 `[ResetStatic]` 后会被重置为 0。静态检查将非默认初值配 Default 判为不符合，不能暂缓；运行时首次读取还会给出辅助警告。
 
 ### 异步任务
 
@@ -103,7 +113,7 @@ public class GameManager : MonoBehaviour
 - 每个异步任务都要有明确的发起者和结束时机：MonoBehaviour 发起的任务用 `destroyCancellationToken`；跨场景的服务用自己的 `CancellationTokenSource`，在服务的停止方法中取消（该方法可加 `[OnExitPlayMode]`）；只需在 Play 结束时取消的任务用 `Application.exitCancellationToken`（停止 Play 时取消，下次进入时重建。该令牌在关闭 Domain Reload 时的行为尚未在本工程实测，以连续 Play → Stop 的结果为准）。
 - 令牌在发起任务时读取，并沿调用链传递（`Task.Delay(ms, token)`、支持取消的 I/O）。不要把令牌存进静态字段。
 - `await` 之后写共享状态前，先确认令牌未取消。被取消的任务以取消结束，不要当作成功处理，也不要吞掉异常。
-- 避免 `async void`。Unity 消息方法（如 `async void Start()`）不得不用时，在内部传递取消令牌并处理异常。线程和线程池计时器要在停止方法中 `Dispose` 或结束；只把字段置 null 不会停止已在运行的工作。
+- 不使用 `async void`，Unity 消息方法也不例外；由同步入口启动可等待、可取消的任务并明确处理终态。线程和线程池计时器要在停止方法中 `Dispose` 或结束；只把字段置 null 不会停止已在运行的工作。
 
 ```csharp
 public static class ProfileLoader
@@ -125,56 +135,29 @@ public static class ProfileLoader
 
 ## 4. 处理已有项目
 
-1. **运行检查**：菜单 `Tools/Easy Reload Guard/检查静态变量并查看结果`，结果显示在设置页 `Project Settings/Easy Reload Guard`。扫描 Assets 和全部包（含预编译 DLL）中参与打包的代码，报告写入 `Library/EasyReloadGuard/AuditReport.md`。不需要检查的包，在设置的“排除的包”中添加。只在自己电脑上安装、不随项目提交的插件，用下面的排除标记，不要写进共享设置。
-2. 已经使用 Unity 推荐写法（`[RuntimeInitializeOnLoadMethod(SubsystemRegistration)]` 或 `[InitializeOnEnterPlayMode]`）自行重置的类型，不再报告。
-3. **记录已知遗留**：看过检查结果后，点设置页中的“把当前问题记为已知遗留”，把当前所有问题写入 `ProjectSettings/EasyReloadGuardBaseline.txt`，并提交到版本管理。
-4. **阻止新问题**：在 `Project Settings/Easy Reload Guard` 中把“进入 Play 前检查”设为 **阻止进入 Play**。之后新出现的错误会阻止进入 Play，已知遗留的问题只列出、不阻止。
-5. **逐个修复**：按报告修复问题，修复后删除清单中对应的行。已修复但没有删除的行，报告会提示“遗留问题清单中的过期行”。判断方法见[接入手册](Documentation~/接入手册.md)。
+1. 升级 0.5.0 时先清空 `ProjectSettings/EasyReloadGuardBaseline.txt` 的旧条目，按新规则重新检查。旧 ReloadSafe 复核行失效；不自动当作暂缓。
+2. 从菜单 `Tools/Easy Reload Guard/检查静态变量并查看结果` 运行检查，结果显示在设置页，并写入 `Library/EasyReloadGuard/AuditReport.md`。
+3. 按类型修复不符合项。SelfHandled 只接受 Unity 官方来源；其他代码声明 ResetField、ResetType、ResetGenericField 或 InvokeOnReset。
+4. 暂时不能处理的“字段没有处理方式”及 KnownIssue，可用“把当前问题列为暂缓”记录。特性/适配器用错、初值不匹配、覆盖不完整、async void、未取消的异步资源、ReloadSafe 证明不了、无法分析或泛型无法展开，均不能暂缓。
+5. 检查档位仍是关闭=0、只警告=1、阻止=2，默认只警告。阻止档位拦截未暂缓的不符合项；暂缓不等于符合规范。
 
 ### 检查报告怎么看
 
-报告从上到下分为：
+开头直接显示“符合规范”，或“不符合规范：N 项（待处理 X、暂缓 Y）”；下面分别列出待处理、暂缓、建议，以及适配器和未检查范围。建议不计入结论。字段条目列出初值、写入位置、内容使用和分析范围。非私有可变字段在第一阶段不能通过全局写入证明。
 
-1. **概况**：Unity 版本、Enter Play Mode 设置、待处理的错误/警告/提示数量，以及已知遗留的数量。
-2. **第三方包与 DLL 的适配器**：每个适配器处理哪个包、已安装版本是否经过复核、为什么不需要处理。
-3. **按类型汇总**：按来源（Assets / 包 / DLL）→ 程序集 → 类型列出待处理的错误和警告，Assets 源码在前，问题多的类型在前。一个类型的静态状态通常由同一段代码负责，可以按行分工。
-4. **错误 / 警告 / 提示 / 已知遗留**：每个级别下按问题类型分小节，每条写明是哪个成员、为什么有问题、建议怎么改。
-5. 每条字段问题下方还有一行**读写位置**，来自对编译后代码的只读分析：
-   - 初值：是否在字段初值或静态构造中赋值。
-   - 赋值 / 内容修改：静态初始化以外，哪些方法给字段赋值、修改集合或数组元素、调用对象方法。
-   - 范围：私有字段的结论完整；非私有字段只统计了所在类型内部，类型外的写入需要自己搜索。lambda、局部函数和 async 方法中的访问会还原为所在的源方法名。
+| 问题 | 结论 | 可否暂缓 |
+| --- | --- | --- |
+| 静态字段、事件、Unity 对象或只读集合内容没有处理方式 | 不符合 | 可以 |
+| 第三方代码的 KnownIssue | 不符合 | 可以 |
+| 特性用错、原因缺失、重置方式与初值不匹配、覆盖遗漏、ReloadSafe 证明失败 | 不符合 | 不可以 |
+| async void、没有取消/释放的静态异步资源、进入 Play 钩子未交给包执行 | 不符合 | 不可以 |
+| 适配器目标不存在/用法错误/内置版本未复核、泛型不能展开、IL 分析失败 | 不符合 | 不可以 |
+| 私有字段可改为 readonly、泛型展开结果、初值可能不干净、过期清单行 | 建议 | 不影响结论 |
+| 项目 SelfHandled 官方包的静态字段签名变化 | 建议 | 可记录复核签名，不计为暂缓的不符合项 |
 
-问题类型：
+### 暂缓清单
 
-| 问题类型 | 级别 | 含义 | 能否记为已知遗留 |
-| --- | --- | --- | --- |
-| 静态事件或委托未处理 | 错误 | 订阅会带到下一次 Play | 能 |
-| 静态 Unity 对象未处理 | 错误 | 下一次 Play 时指向已销毁的对象，单例常见 | 能 |
-| 静态字段的值会带到下一次 Play | 警告 / 提示 | 私有且只在静态初始化时赋值（实际不会变）的降为提示，建议改为 const 或 readonly | 能 |
-| 只读集合、数组或对象的内容会带到下一次 Play | 警告 / 提示 | 只在静态初始化时填充的私有集合为提示 | 能 |
-| async void 方法 | 警告 | 停止 Play 后仍会继续执行 | 能 |
-| 静态字段持有异步任务、线程或计时器 | 警告 | 停止 Play 后仍在运行 | 能 |
-| 特性用法错误 | 错误 | 如加在实例成员上、readonly 字段用 Default、引用类型用 InitialValue、重置方法是 async | 不能，必须修 |
-| [ReloadSafe] 没写原因 | 错误 | 原因必填 | 不能，必须修 |
-| 泛型静态字段 | 提示 / 警告 | 泛型字段展开到了哪些具体类型；一个都没找到时为警告 | 能 |
-| 已加的重置会破坏下一次 Play | 警告 | 例如把只在静态初始化中创建的对象置 null，或者把静态初始化中填好的集合 Clear 掉 | 能（确认类型外会重新赋值时） |
-| 重置方法漏掉了字段 | 警告 | 类型有 `[ResetMethod]`，但某个字段没有被它处理 | 能 |
-| 声明保留的字段仍在 Play 中被修改 | 警告 | 加了 `[ReloadSafe]` 的字段在静态初始化以外仍被修改，需要确认原因是否还成立。清单中会记下修改的位置，位置增减后需要重新确认 | 能 |
-| 适配器找不到目标 | 错误 | 适配器引用的类型或成员不存在（目标升级或改名） | 不能，必须修 |
-| 适配器目标的版本未复核 | 警告 | 只用于本包内置的适配器：已安装的官方包版本不在复核列表中 | 不能，升级本包或联系本包维护者 |
-| 跳过检查的代码中静态字段有变化 | 警告 | 项目适配器用 `HandlesType` / `SelfHandled` 跳过的类型，静态字段与上次记为已知遗留时不同（第一次检查时也会出现） | 能（复核后记为已知遗留） |
-| 适配器要求进入 Play 前重新加载脚本 | 提示 | 适配器声明了兜底重新加载 | — |
-| 第三方代码的已知问题 | 警告 | 适配器复核出的、会影响运行的包内静态状态 | 能 |
-| 遗留问题清单中的过期行 | 提示 | 清单中的某行已没有对应问题，可以删除 | — |
-| 无法分析的类型 | 警告 | 某个类型无法反射，已跳过 | — |
-
-### 已知遗留问题清单
-
-`ProjectSettings/EasyReloadGuardBaseline.txt` 记录了“已经知道、暂时不修”的问题，作用是让“阻止进入 Play”只拦截**新出现的**问题：
-
-- 文件由菜单生成，按问题类型分组，每组上方有注释说明这是什么问题。每行的格式为 `规则编号|程序集|类型.成员`，由工具比对，不要手工添加新行（编号对照见文末附录）。
-- 清单中的问题仍然列在报告末尾的“已知遗留”中，只是不阻止进入 Play。
-- 修复一个问题后删除对应行；重新生成会覆盖整个文件。
+文件名仍是 `ProjectSettings/EasyReloadGuardBaseline.txt`。每行 `规则编号|程序集|类型.成员`，官方包签名复核行另带证据。生成会覆盖当前清单；修复后删除对应行。清单仅影响阻止 Play，报告始终保留这些不符合项。不要为了获得“符合规范”而扩大排除范围。
 
 ### 停止 Play 后检查
 
@@ -182,17 +165,17 @@ public static class ProfileLoader
 
 - **仍引用已销毁的对象**：静态字段、集合元素或回调的目标，仍指向上一次 Play 已销毁的 `UnityEngine.Object`。
 - **比上次停止时增加**：同一个回调方法在引擎或编辑器的静态事件（`EditorApplication`、`SceneManager`、`Application`、`Camera`、`Canvas`、`RenderPipelineManager` 等）或项目的委托中出现的次数增加了，或者集合元素增加了。从本次脚本加载后的第 2 次停止开始比较。
-- 检查的项目字段来自最近一次检查报告中未处理的字段（含已知遗留）。本次脚本加载后还没运行过检查时，只检查引擎回调。
+- 检查的项目字段来自最近一次检查报告中未处理的字段（含暂缓）。本次脚本加载后还没运行过检查时，只检查引擎回调。
 - 读取静态字段会触发尚未执行过的静态构造。只创建集合、字符串、数值的静态构造照常读取；其他有静态构造的项目类型默认跳过，报告分别列出“跳过”和“无法读取”的数量。设置“停止后检查也读取有静态构造的类型”可以放开。
 - 设置“停止 Play 后检查残留”可以关闭本功能。
 
 ## 5. 第三方包和 DLL
 
-- 默认**扫描全部包**，规则与 Assets 相同。确认不需要检查的包，在设置的“排除的包”中添加。
-- **个人本机插件用排除标记**：在插件根目录放一个名为 `.easyreloadguard-exclude` 的文件，这个目录及子目录里的程序集都不检查（有 asmdef 的源码程序集和 DLL；没有 asmdef 的代码会编进 `Assembly-CSharp`，不能用标记单独跳过）。文件内容可选，写一句原因，例如“本机个人插件，不随项目”，会显示在报告里。查找从程序集的 asmdef 或 DLL 所在目录逐级向上，到包根目录（含 `package.json`）或工程根目录为止，放在工程根目录的标记不生效。文件名以点开头，Unity 不导入、不生成 `.meta`；放好后运行一次检查即可生效。被跳过的程序集列在报告开头和设置页，不会悄悄消失；它们的静态状态不再检查，需要自己负责。
-- 公司内部维护的包，直接修改包源码；外部官方来源的包保持源码不变，用适配器处理。
-- 判断标准是“上一次 Play 留下的值会不会改变下一次 Play 的结果”，而不是“有没有静态字段”。以下情况都不影响结果：确定性的缓存和常量、只在编辑器中使用的代码、包自己会在 Play 开始/结束或对象销毁时重置、使用前判空重建、有意保留的设置。只增不删但不会被读取的缓存只会增加内存，在依据中注明即可。
-- 包内的静态状态逐条复核、确认不影响运行后，写一个适配器并调用 `SelfHandled("依据")`，此后这个包不再检查。复核中发现的例外用 `KnownIssue(类型, 成员, 说明)` 继续报告为警告。只复核了部分类型时，用 `HandlesType` 逐个声明。
+默认扫描 Assets、全部包中的 Player 程序集以及当前构建目标可用的 DLL。Editor-only 与测试程序集不扫描。设置排除、目录排除标记和 SelfHandled 官方包列在报告“未检查范围”。`.easyreloadguard-exclude` 的范围从 asmdef/DLL 所在目录向上到包根或项目根，项目根本身不生效；没有 asmdef 的脚本不能按单个目录排除。只给个人本机插件使用，不用于隐藏需要处理的项目状态。
+
+适配器声明怎么处理，不接受“保留也不会出错”的豁免。`SelfHandled` 仅限 Package Manager 报告为 BuiltIn，或 Registry 且 registry.isDefault 的包；嵌入、Git、本地来源及其他注册表，即使包名以 com.unity 开头，也不满足。该来源判定在本次实现后尚未实测。DLL 不能 SelfHandled。内部包源码变更与业务工程接入的授权分别处理。
+
+`HandlesType` 已删除，没有兼容入口。检查器能证明不变的类型可删除旧声明，其余改为逐字段重置或明确的重置动作。
 
 内置适配器（版本固定，复核依据见 `Editor/Adapters/BuiltInAdapters.cs`；已安装版本不在列表中时，报告“适配器目标的版本未复核”）：
 
@@ -208,7 +191,6 @@ public static class ProfileLoader
 | Collections | 2.6.2、2.6.3 | — |
 | AI Navigation | 2.0.9、2.0.11 | — |
 | Newtonsoft Json | 3.2.1、3.2.2 | — |
-| Unity MCP（com.coplaydev.unity-mcp） | 10.0.0 | — |
 
 - 适配器只覆盖包自身。业务代码订阅包的公开静态事件或全局钩子（如 `TMP_Text.OnFontAssetRequest`、`UniTaskScheduler.UnobservedTaskException`、`EventBus.Register`、`JsonConvert.DefaultSettings`）时，检查器看不到这些订阅，仍须由业务代码在停止时成对取消。
 - 预编译 DLL 只扫描当前构建目标可用的部分。只在编辑器中使用的工具库（版本管理、IDE、IL 处理等）不参与运行，不扫描；NUnit 和测试程序集也不扫描。
@@ -230,46 +212,41 @@ sealed class SomeSdkAdapter : ReloadAdapter
         b.InvokeOnReset("Vendor.Sdk.Core, Vendor.Sdk", "Shutdown");            // 进入 Play 时调用它自带的重置或关闭方法
         b.InvokeOnExitPlayMode("Vendor.Sdk.Net, Vendor.Sdk", "CloseAll");      // 停止 Play 时调用
         b.OnReset("重建默认配置", () => Vendor.Sdk.Config.Apply(Vendor.Sdk.Config.Default));
-        b.HandlesType("Vendor.Sdk.Lookup, Vendor.Sdk", "只读查找表，复核于 3.2.1");
+        b.ResetType("Vendor.Sdk.Lookup, Vendor.Sdk", () => Vendor.Sdk.Lookup.RestoreInitialContents());
     }
 }
 ```
 
-- 目标包没有安装时，适配器不生效。
-- 也可以给业务程序集写适配器：`TargetKind => AdapterTargetKind.Assembly`，`Target` 填程序集名（asmdef 程序集的版本为 `0.0.0.0`）。适配器所在的 Editor 程序集可以直接引用业务程序集，用 `typeof(...)` 写类型名。
-- **包更新后怎么发现要重新复核**：项目适配器不比对版本号（基于包开发的项目包更新频繁，又常用 Git tag 发版而不改 `package.json`，版本号既会在无关更新时误报，又会在不改版本时漏报）。按包更新后的情况分别处理：
-  - `ResetField`、`InvokeOnReset`、`InvokeOnExitPlayMode`、`KnownIssue` 引用的类型或成员被改名、删除：报“适配器找不到目标”错误，必须修。
-  - 用 `HandlesType`、`SelfHandled` 跳过检查的代码：检查器记录其中每个类型的静态字段（名称、类型、是否只读），报“跳过检查的代码中静态字段有变化”警告。第一次出现时，确认这些字段不影响下一次 Play 后记为已知遗留；之后字段有增删或类型变化，原来那一行失效，报告列出与上次记录相比新增、删除的字段，只需复核这几个。包更新没有动到静态字段时，什么都不报。
-  - 只比对字段定义，不比对方法体：字段没变、读写方式变了的情况，依靠停止后检查发现。
-  - 其余没有声明的代码每次都会重新扫描，新问题照常报告。
-- `VerifiedVersions` 只作记录，可以不写。内置适配器针对 Unity 官方发布的包，仍按 `package.json` 版本比对；版本不在列表中时报“适配器目标的版本未复核”，需要升级本包或联系本包维护者。
-
-DLL 按以下顺序尝试，前一种不可行时再用下一种：
-
-1. **先看报告**：DLL 默认在扫描范围内，报告会列出其中的静态状态。
-2. **写适配器**：`TargetKind => AdapterTargetKind.Assembly`，`Target` 填程序集名，再用 `ResetField` / `InvokeOnReset` / `InvokeOnExitPlayMode` 处理私有静态字段或调用它自带的清理方法。DLL 更新后成员没了会报错。
-3. **确认不需要处理**：`HandlesType(类型, 依据)` 或 `SelfHandled(依据)`。DLL 更新后静态字段有变化时会提醒重新复核。
-4. **兜底**：`b.RequireDomainReload("原因")`。关闭 Domain Reload 时，每次进入 Play 前都会先重新加载脚本，相当于只为这个 DLL 恢复了 Domain Reload。
-5. **运行中发现问题**：项目自己的 Editor 工具或调试代码调用 `PlaySession.RequestDomainReload("原因")`，下次进入 Play 前重新加载脚本。不要为此在业务流程中加判断。
+- 目标包没安装时适配器休眠。程序集目标用 `TargetKind => AdapterTargetKind.Assembly`，`Target` 填程序集名。
+- `ResetField` 核对模式与初值；`InvokeOnReset` 要通过整个类型的字段覆盖检查；`ResetType(typeName, action, order)` 声明动作恢复类型的全部字段。0.5.0 尚无自动结果比对，动作正确性必须运行验收。
+- `OnReset` 只执行动作，不宣称任何字段已处理；`InvokeOnExitPlayMode` / `OnExitPlayMode` 调用释放。
+- `ResetGenericField(openTypeName, fieldName, mode, Func<IEnumerable<Type>> typeArguments = null)` 支持单泛型参数。省略列表时枚举接口/基类约束；例如 `b.ResetGenericField("Vendor.Entry`1, Vendor", "Id", typeArguments: () => new[] { typeof(MyEntry) });`。没有约束、没有闭合类型或实参非法都会报告不符合。
+- 项目适配器不比对 package.json 版本。引用的类型/成员消失会报告不符合；只有 SelfHandled 官方包继续比对静态字段签名，复核后可把签名写进清单。签名比较不覆盖方法体变化。
+- 内置官方包适配器按版本复核；版本不在列表中即不符合、不能暂缓，而且继续扫描目标。
+- `KnownIssue` 记录已知不符合、可暂缓的问题，不等于已处理。
+- 无法恢复时用 `RequireDomainReload("原因")`：进入前重新加载全部脚本，让目标静态字段恢复；这不是只重载某个 DLL，异步资源释放仍由业务负责并继续检查。
+- Editor 工具可通过 `PlaySession.RequestDomainReload` 请求下次进入前重新加载；不要向业务流程插入登记或判断。
 
 尚未提供的能力：修改 DLL 的代码（如用 Harmony 或 Cecil 改写静态构造）。侵入性强，又容易随版本失效，确有需要时再单独评估。
 
 ## 6. 进入和停止 Play 时的执行顺序（关闭 Domain Reload 时）
 
-```
-进入 Play（RuntimeInitializeLoadType.SubsystemRegistration 阶段）
-  PlaySession.RegisterReset 登记的动作（按登记顺序，执行后移除）
-  → PlaySession.RegisterPersistentReset 登记的动作（按登记顺序，每次都执行，直到解除或登记方对象销毁）
-  → [ResetStatic] 字段（按 类型.字段名 排序）
-  → [ResetMethod] 和适配器的重置（按 order，相同时按名称）
-
-停止 Play（ExitingPlayMode，开启 Domain Reload 时也执行）
-  [OnExitPlayMode] 和适配器的释放（按 order）
+```text
+ExitingEditMode：检查关口 → 纯初始化类型提前记录 InitialValue → 登记已加载场景数
+Unity 调用业务 InitializeOnEnterPlayMode → 编辑模式对象退出
+最后一个进入方向的 sceneClosed：
+  一次性登记 → 持久登记 → ResetStatic 字段 → ResetMethod / 适配器重置
+SubsystemRegistration：若上述重置未执行则补做，并警告时机退回；处理本次重置失败
+ExitingPlayMode：OnExitPlayMode / 适配器释放（开启 Domain Reload 时也执行）
 ```
 
-- 某一步失败只记录异常，不影响后续步骤。失败会汇总成一条错误，并默认在下次进入 Play 前重新加载脚本（设置“重置失败后重新加载脚本”）。持久登记的动作某次失败后仍然保留。
-- 同一阶段内各方法的执行顺序由 Unity 决定，不保证先后。业务自己在 `SubsystemRegistration` 阶段初始化的字段，不要再加 `[ResetStatic]`（检查器把这类类型视为自行重置）。不要为本包调整业务的初始化阶段。
-- `[OnExitPlayMode]` 方法所在的类型如果有带副作用的静态构造，停止 Play 时会触发它。
+- 场景关闭回调只在进入登记期间响应，重置每轮只执行一次。场景数来自已加载的场景，不包含 Hierarchy 中未加载的场景；未保存场景、关闭 Scene Reload 和场景计数不匹配的实际效果仍待新版实测。
+- `InitialValue` 只采集一次；纯初始化类型在首次 ExitingEditMode 采集，其余在首次重置时采集，报告提示“初值可能不干净”。编辑模式代码更早写入的污染不能自动识别。
+- 每一步失败后继续其他步骤。进入重置失败时本轮 Play 作废，请求退出、重新加载并自动再进入；自动重试仍失败时只退出，不再循环。关闭“重置失败后重新加载脚本”时只退出。失败写入 Console 和 `Library/EasyReloadGuard/ResetFailureReport.md`（最近一次失败记录）。
+- 请求退出不是立即生效：旧时机实测失败轮仍可执行初始化、Awake/Start 和首帧；外部文件、网络、原生资源副作用不在保证范围。新版 sceneClosed 执行与 SubsystemRegistration 失败收尾组合尚未实测。
+- 停止时释放失败仍登记下次进入前重新加载。持久登记失败不会自动取消登记。
+- 同阶段业务回调没有包保证的顺序。业务 SubsystemRegistration 写入的字段仍需包重置；InitializeOnEnterPlayMode 方法须同时标 ResetMethod，字段重置后再执行，必须可重复调用。
+- OnExitPlayMode 所在类型有带副作用的静态构造时，退出时读取/调用仍可能触发它。
 
 ## 7. 重新加载脚本（兜底）
 
@@ -278,21 +255,21 @@ DLL 按以下顺序尝试，前一种不可行时再用下一种：
 | `Tools/Easy Reload Guard/立即重新加载脚本` | Play 中会先停止，再调用 `EditorUtility.RequestScriptReload()` |
 | `Tools/Easy Reload Guard/重新加载脚本并进入 Play` | 重新加载完成后自动进入 Play |
 | 主工具栏 Play 按钮旁的“重载并 Play” | 同上；右键可只重新加载脚本或打开设置页。第一次加载本包时自动显示（每人每工程一次），之后可在工具栏右键菜单 `Easy Reload Guard` 中隐藏或重新显示 |
-
-主工具栏上还有一个 Domain Reload 状态图标：**绿色闪电**表示 Domain Reload 已关闭（进入 Play 快），**黄色闪电**表示已开启（常规，每次进入 Play 都重新加载脚本）。按 Unity 实际使用的 `EditorSettings.asset` 序列化开关判断；接口与序列化开关不一致时显示黄色，悬停提示中说明原因。设置改变后约 1 秒内刷新。点击打开 Enter Play Mode 设置，右键打开本包设置；显示和隐藏方式与“重载并 Play”相同。
 | `ForceReload.RequestBeforeNextPlay(reason)`（Editor） | 下次进入 Play 时先取消，重新加载后再进入 |
 | `PlaySession.RequestDomainReload(reason)`（运行时代码中调用，Player 中会被编译器删除） | 同上 |
 | 重置或释放失败、适配器 `RequireDomainReload` | 自动登记 |
+
+主工具栏上还有一个 Domain Reload 状态图标：**绿色闪电**表示 Domain Reload 已关闭（进入 Play 快），**黄色闪电**表示已开启（常规，每次进入 Play 都重新加载脚本）。按 Unity 实际使用的 `EditorSettings.asset` 序列化开关判断；接口与序列化开关不一致时显示黄色，悬停提示中说明原因。设置改变后约 1 秒内刷新。点击打开 Enter Play Mode 设置，右键打开本包设置；显示和隐藏方式与“重载并 Play”相同。
 
 如果本次脚本加载后还没进入过 Play（刚编译或刚重新加载），脚本已经是干净的，待处理的请求直接视为完成，不会重复加载。
 
 ## 8. 命令行检查（CI）
 
 ```bash
-Unity -batchmode -nographics -projectPath <项目> -executeMethod EasyReloadGuard.Editor.ReloadGuardCli.Audit -easyReloadGuardReport Build/ReloadGuardReport.md -easyReloadGuardFailOn error
+Unity -batchmode -nographics -projectPath <项目> -executeMethod EasyReloadGuard.Editor.ReloadGuardCli.Audit -easyReloadGuardReport Build/ReloadGuardReport.md -easyReloadGuardFailOn pending
 ```
 
-退出码：0 表示通过，1 表示存在不在遗留清单中的问题，2 表示检查本身失败。不要同时传 `-quit`。
+`pending`（默认）在未暂缓的不符合项存在时失败；`violation` 在任何不符合项（含暂缓）存在时失败。0.4 的 error/warning 参数已删除，传入会作为参数错误退出。退出码：0 满足所选策略，1 不满足，2 检查或参数失败。不要同时传 `-quit`。
 
 本工程自带流水线脚本 `Tools/UnityCI/Run-UnityTests.ps1`，依次运行 batchmode 测试和检查。工程正被编辑器打开时，脚本会先把 Assets、Packages、ProjectSettings 和 Library/PackageCache 复制到 `%TEMP%\EasyReloadGuardCI` 再运行，不影响正在使用的编辑器：
 
@@ -308,13 +285,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File Tools/UnityCI/Run-UnityTests
 
 1. 复核 `Editor/Core/EditorCompat.cs`：所有和 Unity 版本相关的调用（读取 Enter Play Mode 设置及其序列化字段、在 ExitingEditMode 中取消进入 Play、`RequestScriptReload`、查询包版本）都集中在这个文件。
 2. 运行 `Tools/UnityCI/Run-UnityTests.ps1`（或在 Test Runner → EditMode 中运行 `EasyReloadGuard.Editor.Tests` 和 `DomainReloadCases.Tests`）。嵌入式包的测试默认可见，不需要配置 `testables`。
-3. 运行检查，处理“适配器找不到目标”“跳过检查的代码中静态字段有变化”和“适配器目标的版本未复核”（内置适配器对应的包可能也随 Unity 升级了）。
+3. 运行检查，处理“适配器找不到目标”“信任的官方包中静态字段有变化”和“适配器目标的版本未复核”（内置适配器对应的包可能也随 Unity 升级了）。
 4. 关闭 Domain Reload，连续 Play → Stop 至少 3 次，确认 Console 中没有 `[Easy Reload Guard]` 错误。
 5. 新版 Unity 如果提供了官方的同类机制，用适配器接入或替换 `ResetPipeline` 的执行时机即可，业务代码上的特性保持不变。
 
 ## 10. 已知限制
 
-- `InitialValue` 记录的是“本次脚本加载后，第一次在关闭 Domain Reload 时进入 Play”那一刻的值。如果此前已经运行过 Play（例如先在开启 Domain Reload 时 Play 过，再切换为关闭），进入 Play 前会先重新加载一次脚本，以便拿到干净的初值；但编辑模式下的代码（ExecuteAlways、编辑器工具）在此之前对字段的修改无法识别。
+- `InitialValue` 的采集时机与局限见第 6 节。如果此前已经运行过 Play（例如先在开启 Domain Reload 时 Play 过，再切换为关闭），进入 Play 前会先重新加载一次脚本，以便拿到干净的初值；但编辑模式下的代码（ExecuteAlways、编辑器工具）在此之前对字段的修改无法识别。
 - 在 ExitingEditMode 中通过 `EditorApplication.isPlaying = false` 取消进入 Play：已在 6000.3.1f1 上实测有效。取消时 Unity 会同时触发一次 `ExitingPlayMode`，所以释放方法会多执行一次，释放方法应可重复调用。升级 Unity 后需要重新验证。
 - 延迟执行统一使用 `EditorCompat.RunOnNextUpdate`，不用 `EditorApplication.delayCall`。6000.3.1f1 实测：编辑器在后台、由外部工具驱动时，`update` 照常执行，但 `delayCall` 不会被调用，会导致“取消后重新加载并进入 Play”卡住。
 - Unity 6.3 中 `EditorSettings.enterPlayModeOptionsEnabled` 由 options 推导，不能单独设置：
@@ -324,7 +301,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File Tools/UnityCI/Run-UnityTests
 
   需要修改设置时，先写 options，再写 `enabled = options != None`。
 - 6000.3.1f1 实测：接口读到的 `enterPlayModeOptionsEnabled` 只由 options 推导，写入也不会改动 `EditorSettings.asset` 中的 `m_EnterPlayModeOptionsEnabled`；而进入 Play 时 Unity 按这个序列化字段决定。字段为 false 时，接口显示已关闭 Domain Reload，脚本却照样重新加载。本包以序列化字段为准判断是否关闭了 Domain Reload；两者不一致时，设置页和检查报告会提示，进入 Play 时 Console 也会输出警告。用脚本切换时，要用 `SerializedObject` 同时写入该字段，结束后清除脏标记。
-- 检查只读取反射信息和所在类型内方法的编译后代码，不执行、不修改。类型外对非私有字段的写入、经局部变量转手的集合修改、反射写入都不在分析范围内；“读写位置”中的“范围”一项会标明结论是否完整。
+- 检查只读取元数据和类型内 IL，不执行它们。全局写入索引尚未实现：非私有可变字段不能仅凭类型内没有写入获得证明。局部变量转手、传参、返回引用等不能证明只读；反射写入和原生状态不在分析范围内。
 - 检查无法判断 `await` 之后写入的状态是否已失效，也看不到 lambda 形式的 `async void`、`ConfigureAwait(false)` 之后在线程池上的写入。这些依靠业务按第 3 节处理，并用连续 Play → Stop 和停止后检查验证。
 - 检查看不到“静态构造中订阅了外部事件”。这类订阅需要由负责的代码在已有的释放方法中取消（加 `[OnExitPlayMode]`），或在 Editor 适配器中处理；连续 Play 时，停止后检查会报告订阅次数的增加。
 - 停止后检查默认跳过静态构造有副作用的项目类型（调用 UnityEngine、业务代码或读取其他类型静态字段的初始化都算有副作用），只读字段的值，不追踪引用链。“没有发现残留”不等于没有残留。
@@ -332,21 +309,31 @@ powershell -NoProfile -ExecutionPolicy Bypass -File Tools/UnityCI/Run-UnityTests
 - UniTask 2.5.11：`PlayerLoopHelper.InsertRunner` 每次初始化都向 `EditorApplication.playModeStateChanged` 追加一组处理器（每个时机一个，共 16 个），且从不移除。关闭 Domain Reload 时，每次进入 Play 都会多一组，旧处理器还持有旧的 runner 和队列。本包不内置 UniTask 适配器：检查器看不到挂在 UnityEditor 事件上的订阅，也不能把整个包声明为已处理。应在 UniTask 源码中修复（内部维护的版本）；本测试工程中的临时做法见 `Assets/ReloadGuardProjectAdapters`。
 - 测试程序集（引用了 nunit 的程序集）中的特性和适配器不参与重置，也不参与检查。
 
-## 附录：遗留问题清单中的规则编号
+## 附录：暂缓清单中的规则编号
 
-报告和 Console 中只显示问题类型的名称。遗留问题清单（`EasyReloadGuardBaseline.txt`）每行开头的编号是工具用来比对的标识，对照如下：
+报告和 Console 使用问题类型名称。编号只用于清单比对，不代表所有类型都可以暂缓。
 
 | 编号 | 问题类型 |
 | --- | --- |
 | RG001 | 静态事件或委托未处理 |
 | RG002 | 静态 Unity 对象未处理 |
-| RG003 | 静态字段的值会带到下一次 Play |
-| RG004 | 只读集合、数组或对象的内容会带到下一次 Play |
+| RG003 | 静态字段没有处理方式 |
+| RG004 | 只读集合、数组或对象的内容没有处理方式 |
 | RG005 | async void 方法 |
 | RG006 | 静态字段持有异步任务、线程或计时器 |
+| RG010 | 特性用法错误 |
+| RG011 | [ReloadSafe] 没写原因 |
 | RG012 | 泛型静态字段 |
-| RG013 | 已加的重置会破坏下一次 Play |
+| RG013 | 重置方式与字段初值不匹配 |
 | RG014 | 重置方法漏掉了字段 |
-| RG015 | 声明保留的字段仍在 Play 中被修改（行末附带修改位置） |
+| RG015 | [ReloadSafe] 的字段不能证明不变 |
+| RG016 | [InitializeOnEnterPlayMode] 方法没有标 [ResetMethod] |
+| RG017 | 初值可能不干净 |
+| RG020 | 适配器找不到目标 |
+| RG021 | 适配器目标的版本未复核 |
+| RG022 | 适配器要求进入 Play 前重新加载脚本 |
 | RG023 | 第三方代码的已知问题 |
-| RG024 | 跳过检查的代码中静态字段有变化（行末附带复核时的字段） |
+| RG024 | 信任的官方包中静态字段有变化 |
+| RG025 | 适配器用法错误 |
+| RG030 | 暂缓清单中的过期行 |
+| RG040 | 无法分析的类型 |

@@ -37,7 +37,7 @@ namespace EasyReloadGuard.Editor
         static readonly HashSet<string> k_ProbedRules = new HashSet<string>(StringComparer.Ordinal)
         {
             RuleIds.StaticDelegate, RuleIds.StaticUnityObject, RuleIds.MutableStatic, RuleIds.ReadonlyState,
-            RuleIds.AsyncResource, RuleIds.OwnerCoverage, RuleIds.SafeDrift, RuleIds.AdapterKnownIssue,
+            RuleIds.AsyncResource, RuleIds.OwnerCoverage, RuleIds.SafeDrift, RuleIds.AdapterKnownIssue, RuleIds.GenericExpansion,
         };
 
         static ResidueSnapshot s_Previous;
@@ -88,11 +88,11 @@ namespace EasyReloadGuard.Editor
             k_EngineTypes.SelectMany(t => t.GetFields(ReflectionUtil.StaticMembers))
                 .Where(f => typeof(Delegate).IsAssignableFrom(f.FieldType) || EditorCompat.IsTrackedEventType(f.FieldType));
 
-        /// <summary>检查报告中未处理（含已知遗留）以及声明 [ReloadSafe] 但在 Play 中被写入的静态字段；已声明重置的字段每次进入 Play 都会恢复，不在检查范围内。</summary>
+        /// <summary>检查报告中没有处理方式的字段（含暂缓）以及声明 [ReloadSafe] 但不能证明不变的字段；已声明重置的字段每次进入 Play 都会恢复，不在检查范围内。</summary>
         static IEnumerable<FieldInfo> ProjectFields(AuditReport audit) =>
             audit == null
                 ? Enumerable.Empty<FieldInfo>()
-                : audit.Findings.Where(f => k_ProbedRules.Contains(f.RuleId)).Select(f => f.Member as FieldInfo).Where(f => f != null);
+                : audit.Findings.Where(f => f.IsViolation && k_ProbedRules.Contains(f.RuleId)).Select(f => f.Member as FieldInfo).Where(f => f != null);
 
         /// <summary>已销毁对象的引用总是报告；订阅与集合只在本次比上次停止 Play 时增加才报告。</summary>
         internal static ResidueResult Compare(ResidueSnapshot previous, ResidueSnapshot current)

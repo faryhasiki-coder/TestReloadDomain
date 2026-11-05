@@ -159,15 +159,4 @@ namespace EasyReloadGuard.Editor
         public override void Configure(ReloadAdapterBuilder builder) =>
             builder.SelfHandled("静态字段为 _init 守卫下的惰性反射缓存与只读表；JsonConvert.DefaultSettings 是全局配置钩子，库内只读，业务写入时由业务负责。");
     }
-
-    /// <summary>依据 10.0.0 源码复核：Runtime 程序集只被包内 Editor 工具调用，字段为一次性反射探测缓存。</summary>
-    internal sealed class UnityMcpAdapter : ReloadAdapter
-    {
-        public override string Target => "com.coplaydev.unity-mcp";
-
-        public override string[] VerifiedVersions => new[] { "10.0.0" };
-
-        public override void Configure(ReloadAdapterBuilder builder) =>
-            builder.SelfHandled("MCPForUnity.Runtime 只被包内 Editor 工具调用，不参与游戏 Play 逻辑；静态字段为一次性反射探测缓存。");
-    }
 }

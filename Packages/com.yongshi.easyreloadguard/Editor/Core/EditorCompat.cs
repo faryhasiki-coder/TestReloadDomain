@@ -60,6 +60,13 @@ namespace EasyReloadGuard.Editor
             $"Domain Reload={(DomainReloadDisabled ? "关闭" : "开启")}，Scene Reload={(SceneReloadDisabled ? "关闭" : "开启")}" +
             (PlayModeOptionsMismatch ? $"（{MismatchHint}）" : string.Empty);
 
+        /// <summary>
+        /// 已加载的场景数。6000.3.1f1 实测（开启 Scene Reload）：进入 Play 时每个已加载场景收到一次 EditorSceneManager.sceneClosed，
+        /// 位于编辑模式对象 OnDisable/OnDestroy 之后、所有 SubsystemRegistration 之前；停止 Play 时也会收到（isPlaying 为 false）。
+        /// 未保存的场景、Hierarchy 中未加载的场景是否收到通知未实测，对不上时由 SubsystemRegistration 后备执行重置。
+        /// </summary>
+        public static int LoadedSceneCount => UnityEngine.SceneManagement.SceneManager.loadedSceneCount;
+
         /// <summary>在 ExitingEditMode 回调中取消本次进入 Play。</summary>
         public static void CancelEnterPlayMode() => EditorApplication.isPlaying = false;
 
@@ -97,14 +104,20 @@ namespace EasyReloadGuard.Editor
             return false;
         }
 
-        /// <summary>已登记的包：package.json 版本，以及 Git 来源时 manifest 中的 tag（或分支、提交号）与实际解析的提交号。</summary>
+        /// <summary>
+        /// 已登记的包：package.json 版本，Git 来源时 manifest 中的 tag（或分支、提交号）与实际解析的提交号，
+        /// 以及是否由 Unity 官方提供：随 Editor 提供的包（来源为 BuiltIn，如 Unity 6 的 uGUI、渲染管线等 core 包），
+        /// 或来源为 Registry 且注册表是 Package Manager 的默认注册表。嵌入、本地、Git 与其他注册表的包都不是。
+        /// </summary>
         public static Dictionary<string, InstalledPackage> GetRegisteredPackages()
         {
             var packages = new Dictionary<string, InstalledPackage>(StringComparer.Ordinal);
             foreach (var package in UnityEditor.PackageManager.PackageInfo.GetAllRegisteredPackages())
             {
                 var git = package.source == UnityEditor.PackageManager.PackageSource.Git ? package.git : null;
-                packages[package.name] = new InstalledPackage(package.version, package.source.ToString(), git?.revision, git?.hash);
+                var official = package.source == UnityEditor.PackageManager.PackageSource.BuiltIn ||
+                               (package.source == UnityEditor.PackageManager.PackageSource.Registry && package.registry != null && package.registry.isDefault);
+                packages[package.name] = new InstalledPackage(package.version, package.source.ToString(), git?.revision, git?.hash, official);
             }
 
             return packages;

@@ -7,25 +7,19 @@ using System.Runtime.CompilerServices;
 namespace EasyReloadGuard.Editor
 {
     /// <summary>
-    /// 项目适配器用 HandlesType / SelfHandled 跳过检查的代码，按“静态字段签名”判断是否需要重新复核，而不是按版本号：
-    /// 基于包开发的项目包更新频繁，且常用 Git tag 发版而不改 package.json，版本号既会在无关更新时误报，又会在不改版本时漏报。
-    /// 每个类型一条“跳过检查的代码中静态字段有变化”，标识中附带当前的字段签名；记为已知遗留即表示已复核。
-    /// 之后字段增删或类型变化时这一行失效，报告列出与上次记录相比的差异。只比对字段定义，不比对方法体：
-    /// 字段不变而读写方式改变的情况，依靠停止后检查发现。
+    /// 项目适配器对 Unity 官方包用 SelfHandled（复核后信任）时，按“静态字段签名”判断是否需要重新复核，而不是按版本号：
+    /// 版本号既会在无关更新时误报，又会在不改版本时漏报。每个类型一条“信任的官方包中静态字段有变化”，标识中附带当前的字段签名；
+    /// 列入暂缓清单即表示已复核。之后字段增删或类型变化时这一行失效，报告列出与上次记录相比的差异。
+    /// 这些包不在规范判定范围内（报告中列为未检查范围），所以这一条只是建议，不计入结论。只比对字段定义，不比对方法体。
     /// </summary>
     internal static class AdapterReview
     {
         const string k_DetailPrefix = "字段=";
         const int k_MaxListed = 20;
 
-        public static void Check(ResetPlan plan, AuditReport report, HashSet<string> baseline)
+        public static void Check(AuditReport report, HashSet<string> baseline)
         {
             var seen = new HashSet<Type>();
-            foreach (var (type, adapter, evidence) in plan.ReviewedTypes)
-            {
-                if (seen.Add(type)) Add(report, baseline, type, adapter, $"HandlesType（依据：{evidence}）");
-            }
-
             foreach (var pair in report.ReviewedAssemblies)
             {
                 var assembly = ReflectionUtil.FindLoadedAssembly(pair.Key);
@@ -43,7 +37,7 @@ namespace EasyReloadGuard.Editor
             var signatures = Signatures(type);
             if (signatures.Count == 0) return;
 
-            var finding = new Finding(RuleIds.AdapterReviewChanged, Severity.Warning, ReflectionUtil.Subject(type),
+            var finding = new Finding(RuleIds.AdapterReviewChanged, Severity.Suggestion, ReflectionUtil.Subject(type),
                 Describe(adapter.Name, how, signatures, Previous(baseline, RuleIds.AdapterReviewChanged + "|" + ReflectionUtil.Subject(type))),
                 baselinable: true)
             {
@@ -67,7 +61,7 @@ namespace EasyReloadGuard.Editor
             return result;
         }
 
-        /// <summary>遗留清单中同一类型上一次记录的字段签名；没有记录时为 null。</summary>
+        /// <summary>暂缓清单中同一类型上一次记录的字段签名；没有记录时为 null。</summary>
         internal static HashSet<string> Previous(HashSet<string> baseline, string keyPrefix)
         {
             var prefix = keyPrefix + "|" + k_DetailPrefix;
@@ -81,8 +75,8 @@ namespace EasyReloadGuard.Editor
         {
             if (previous == null)
             {
-                return $"[{adapter}] 用 {how} 跳过检查，还没有记录复核时的静态字段：{List(current)}。" +
-                       "确认它们不影响下一次 Play 后记为已知遗留；之后这些字段有增删或类型变化时会再次提醒。";
+                return $"[{adapter}] 用 {how} 信任该官方包，还没有记录复核时的静态字段：{List(current)}。" +
+                       "复核后列入暂缓清单；之后这些字段有增删或类型变化时会再次提醒。";
             }
 
             var added = current.Where(s => !previous.Contains(s)).ToList();
@@ -90,8 +84,8 @@ namespace EasyReloadGuard.Editor
             var changes = new List<string>();
             if (added.Count > 0) changes.Add("新增或改变 " + List(added));
             if (removed.Count > 0) changes.Add("删除 " + List(removed));
-            return $"[{adapter}] 用 {how} 跳过检查，静态字段与上次记录相比有变化：{string.Join("；", changes)}。" +
-                   "重新复核这些字段：不影响下一次 Play 的，重新记为已知遗留；会影响的，改用 ResetField、InvokeOnReset 或 KnownIssue。";
+            return $"[{adapter}] 用 {how} 信任该官方包，静态字段与上次记录相比有变化：{string.Join("；", changes)}。" +
+                   "重新复核这些字段：仍可信任的，重新列入暂缓清单作为复核记录；不能信任的，用 ResetField、InvokeOnReset 处理或用 KnownIssue 登记。";
         }
 
         static string List(List<string> items) =>
