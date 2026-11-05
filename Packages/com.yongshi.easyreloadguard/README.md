@@ -6,7 +6,7 @@
 2. **恢复它**：在静态字段上加特性，进入 Play 时自动恢复；停止 Play 时调用你指定的释放方法。
 3. **验证它**：每次停止 Play 后自动检查，有没有字段还引用已销毁的对象、有没有订阅或集合每次 Play 都在增加。
 
-处理某份检查报告时，请看[接入手册](Documentation~/接入手册.md)：其中说明了每类问题该谁改、怎么改，以及改完后如何证明。版本变化和验证记录见 [CHANGELOG](CHANGELOG.md)。
+写新代码时，先看第 2.2 节的编码规范：按规范写的代码不需要事后处理。处理某份检查报告时，请看[接入手册](Documentation~/接入手册.md)：其中说明了每类问题该谁改、怎么改，以及改完后如何证明。版本变化和验证记录见 [CHANGELOG](CHANGELOG.md)。
 
 用 Agent 写代码时，在 `Project Settings/Easy Reload Guard` 的“Agent Skill”分组中安装 Skill（或菜单 `Tools/Easy Reload Guard/安装或更新 Agent Skill`），Agent 会按本包的约束处理静态状态。Agent 定位本包代码见 [AGENTS.md](AGENTS.md)。
 
@@ -26,15 +26,45 @@
 
 Player（打包后的游戏）每次启动都会重新加载全部脚本，不会出现这些问题。所以本包**只在 Editor 中工作**。
 
-## 2. 三条约束
+## 2. 约束与编码规范
 
-1. **不影响打包后的逻辑**：运行时程序集 `EasyReloadGuard` 只包含特性，以及 `PlaySession` 上几个带 `[Conditional("UNITY_EDITOR")]` 的方法（Player 中调用会被编译器删除）。Player 中没有本包的任何状态、启动入口或回调。
-2. **业务代码只做两类修改**：
-   - 在**已有的**字段、属性、事件、方法上加特性（因此需要引用 `EasyReloadGuard` 程序集：Assembly-CSharp 自动引用，使用 asmdef 的程序集需手动添加引用）。
+适用的规则取决于这次是哪种工作：
+
+| 工作 | 适用 |
+| --- | --- |
+| 写新代码，或重写自己负责的代码 | 2.1 + 2.2：按编码规范一次写对，目标是不产生新的检查问题 |
+| 给已有代码接入本包（处理检查报告、排查关闭 Domain Reload 后才出现的问题） | 2.1 + 2.3：尽量少改业务，判断方法见[接入手册](Documentation~/接入手册.md) |
+
+### 2.1 始终适用
+
+1. **不影响打包后的逻辑**：运行时程序集 `EasyReloadGuard` 只包含特性，以及 `PlaySession` 上几个带 `[Conditional("UNITY_EDITOR")]` 的方法（Player 中调用会被编译器删除）。Player 中没有本包的任何状态、启动入口或回调。业务代码中，本包只以特性、`#if UNITY_EDITOR` 中的重置方法和 `EasyReloadGuard` 程序集引用（Assembly-CSharp 自动引用，使用 asmdef 的程序集需手动添加）的形式出现；运行时流程中不调用本包接口，不为关闭 Domain Reload 加判断分支，不调整业务的初始化阶段。
+2. **释放和取消由业务自己负责**：订阅、线程、计时器、Socket、下载、原生资源，以及异步任务、后台循环和延迟返回的结果，不能比发起它的对象活得更久。这在 Player 中切场景、返回主菜单、登出时同样是必要的，属于业务本身的正确性。本包不替业务释放或取消，只在检查报告中提示风险（见第 3 节“异步任务”）。
+3. **`[OnExitPlayMode]` 只加在业务流程本身也会调用的停止方法上**：不写只在停止 Play 时才被调用的方法。
+
+### 2.2 写新代码：编码规范
+
+目标：新代码在关闭和开启 Domain Reload 时行为一致，检查不报新问题，不进已知遗留清单。下面这些也是打包后登出重进、切场景、重复初始化的正确写法，所以写新代码时可以按需设计初始化、停止、取消等业务方法，不受 2.3 的改动限制。
+
+1. **先不用静态**：Play 中产生的状态放在负责它的对象实例上（MonoBehaviour，或由启动流程创建并持有的服务），随对象创建和销毁。静态只留给常量、内容不变的计算缓存，以及工程统一的单例和事件中心入口。
+2. **声明时就处理**：每个可变静态成员写下时就按第 3 节选定处理方式并加上特性，不留没有标注的可变静态；能写成 `const`、`static readonly` 的就写。
+3. **初始化可以重复执行**：每次 Play 都要做的初始化放在 `Awake`、`Start` 或业务的 `Init` 中，不放在静态构造或字段初值中（关闭 Domain Reload 时只执行一次）。`Init` 重复调用不会重复订阅、重复创建；“已初始化”标记要加 `[ResetStatic]`。
+4. **订阅成对**：`+=` 与 `-=` 写在对称的生命周期中：`OnEnable`/`OnDisable`、`Awake`/`OnDestroy`、`Init`/`Shutdown`。不在静态构造或 `[InitializeOnLoad]` 中订阅运行时事件。
+5. **资源有负责者和停止方法**：线程、计时器、Socket、下载、原生资源由一个对象创建，并由它的 `Stop`、`Dispose` 或 `Shutdown` 释放。停止方法可以重复调用，由业务的退出流程（销毁、切场景、登出、`Application.quitting`）调用；静态入口的服务给这个停止方法加 `[OnExitPlayMode]`。
+6. **异步由发起者取消**：发起时取得令牌并沿调用链传递，`await` 之后写状态前检查，不用 `async void`（见第 3 节“异步任务”）。`Task`、`CancellationTokenSource` 不放在静态字段中，放在负责的实例上，由它的停止方法取消。
+7. **单例沿用工程的基类**：`Instance` 在 `Awake` 中赋值、在 `OnDestroy` 中是自己时置 null，字段加 `[ResetStatic]`。纯 C# 单例由启动流程创建，并配有停止方法。
+8. **分清缓存和 Play 中的状态**：内容只由输入决定、下一次 Play 仍然正确的计算缓存用 `[ReloadSafe("原因")]`；装了 Play 中对象的对象池、注册表要在下一次 Play 前清空（`Clear` 或重置方法），其中的 Unity 对象已随场景销毁。
+9. **ScriptableObject 不存运行时状态**：不把 Play 中的数据写回资产实例；需要运行时状态时用 `Instantiate` 出的副本或单独的运行时对象。资产的 `OnEnable` 只在加载时执行一次，不能当作每次 Play 的初始化。
+10. **Editor 代码只在脚本加载时订阅**：`EditorApplication` 等编辑器事件在 `[InitializeOnLoad]` 的静态构造中订阅一次；在每次进入 Play 都会执行的代码中订阅，处理器会越积越多。
+
+### 2.3 接入已有代码：改动边界
+
+1. **业务代码只做两类修改**：
+   - 在**已有的**字段、属性、事件、方法上加特性。
    - 新增**只在 Editor 编译**的重置方法：方法连同 `[ResetMethod]` 整体放在 `#if UNITY_EDITOR` 中，只把本类型的静态字段恢复成刚加载时的样子（写法见[接入手册](Documentation~/接入手册.md)第 4 节）。
 
    除此之外，不要为本包在业务中新增方法、Unity 消息、参数、登记调用或判断分支。无法修改的第三方代码放到 Editor 适配器中处理（第 5 节）。
-3. **异步由业务自己取消**：异步任务、后台循环和延迟返回的结果，不能比发起它的对象活得更久。这在 Player 中切场景、返回主菜单、登出时同样是必要的，属于业务本身的正确性，不算“为本包改业务”。本包不替业务取消任务，只在检查报告中提示风险（见第 3 节“异步任务”）。
+2. **业务缺陷修业务**：订阅不成对、缺少释放、`Init` 不去重，在开启 Domain Reload、打包后登出重进时也会出错，不是接入问题。确认后修业务本身；释放方法存在之后，才在它上面加 `[OnExitPlayMode]`。
+3. **不借接入重写旧代码**：接入只解决关闭 Domain Reload 带来的问题；值得按 2.2 重构的地方单独提出。
 
 ## 3. 用特性处理静态状态
 
@@ -58,11 +88,11 @@ public class GameManager : MonoBehaviour
 | `static readonly` 集合 | `[ResetStatic(ResetMode.Clear)]` |
 | 静态事件、自动属性 | `[field: ResetStatic]` |
 | 几个字段需要一起恢复（对象池、注册表等） | 在类型中写一个静态无参方法并加 `[ResetMethod(order)]`。加了之后，整个类型都由这个方法负责，检查器会逐个核对类型中的字段是否都已处理。没有现成方法时，可以新增一个只在 Editor 编译的方法（见接入手册第 4 节） |
-| 订阅、线程、计时器、Socket、Native 内存 | 在业务**已有的**停止或释放方法（如 `Stop()`）上加 `[OnExitPlayMode(order)]`，停止 Play 时调用。没有现成方法时，在 Editor 适配器中处理，不要为此新建方法 |
+| 订阅、线程、计时器、Socket、Native 内存 | 在业务的停止或释放方法（如 `Stop()`，业务流程本身也会调用）上加 `[OnExitPlayMode(order)]`，停止 Play 时调用。写新代码时按 2.2 设计这个方法；接入已有代码时只加在已有方法上，缺少释放是业务缺陷，按 2.3 处理。第三方代码在 Editor 适配器中调用它自带的清理方法 |
 | 有意保留到下一次 Play 的状态 | `[ReloadSafe("原因")]`，可加在字段、类型或程序集上，原因必填。加在字段或类型上之后，如果字段仍在 Play 中被修改，检查器会提醒你重新确认原因 |
 | 泛型单例 `Singleton<T>.s_Instance` | 在泛型定义的字段上加 `[ResetStatic]`，会自动展开到所有派生类用到的具体类型。业务直接使用的具体类型（如 `EventBus<EnemyKilled>`），需要在 Editor 适配器中补充：`b.ResetField(typeof(EventBus<EnemyKilled>).AssemblyQualifiedName, "s_Handlers")` |
-| ScriptableObject 等 `OnEnable` 只执行一次的实例状态 | 特性只处理静态成员。在 Editor 适配器中用 `OnReset` 找到已加载的实例，调用它已有的入口（例如重新执行 `OnEnable`，效果等同开启 Domain Reload）。不要在业务的 `OnEnable` 中加登记代码 |
-| 异步任务、后台循环 | 由发起它的业务代码负责取消，见下文。业务已有的停止方法可以加 `[OnExitPlayMode]` |
+| ScriptableObject 等 `OnEnable` 只执行一次的实例状态 | 特性只处理静态成员。写新代码时不把运行时数据写回资产（2.2 第 9 条）；已有代码在 Editor 适配器中用 `OnReset` 找到已加载的实例，调用它已有的入口（例如重新执行 `OnEnable`，效果等同开启 Domain Reload）。不要在业务的 `OnEnable` 中加登记代码 |
+| 异步任务、后台循环 | 由发起它的业务代码负责取消，见下文。业务的停止方法可以加 `[OnExitPlayMode]` |
 
 注意 `ResetMode.Default` 的陷阱：`static float s_Speed = 1f` 加 `[ResetStatic]` 后会被重置为 0。第一次进入 Play 时，如果发现字段的值不是默认值，Console 会给出警告。
 

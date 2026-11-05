@@ -1,6 +1,6 @@
 ---
 name: easy-reload-guard
-description: "在接入了 Easy Reload Guard（com.yongshi.easyreloadguard）的 Unity 工程中写代码或处理检查结果时使用：新增或修改静态字段、单例、静态事件、注册表/缓存/对象池、ScriptableObject 运行时状态、异步任务、线程或计时器，处理 Easy Reload Guard 的检查报告、停止后检查报告或 [Easy Reload Guard] 日志，以及排查关闭 Domain Reload 后才出现的问题。工程的 Packages/manifest.json 中没有 com.yongshi.easyreloadguard 时不使用。"
+description: "在接入了 Easy Reload Guard（com.yongshi.easyreloadguard）的 Unity 工程中写代码或处理检查结果时使用：编写或修改包含静态字段、单例、静态事件、注册表/缓存/对象池、ScriptableObject 运行时状态、异步任务、线程或计时器的代码（按编码规范一次写对），处理 Easy Reload Guard 的检查报告、停止后检查报告或 [Easy Reload Guard] 日志，以及排查关闭 Domain Reload 后才出现的问题。工程的 Packages/manifest.json 中没有 com.yongshi.easyreloadguard 时不使用。"
 ---
 
 # Easy Reload Guard 约束
@@ -12,20 +12,39 @@ description: "在接入了 Easy Reload Guard（com.yongshi.easyreloadguard）的
 1. 确认 `Packages/manifest.json` 有 `com.yongshi.easyreloadguard`。
 2. 找到实际安装的包目录：`Packages/com.yongshi.easyreloadguard/`（嵌入）或 `Library/PackageCache/com.yongshi.easyreloadguard@*/`。以该目录中的 `README.md`、`Documentation~/接入手册.md`、`AGENTS.md` 为准；本技能与包版本不一致时，以包内文档为准。
 3. 看工程已有的写法：单例基类、事件中心、Editor 适配器所在目录（搜索 `: ReloadAdapter`）。优先沿用，不新建第二套。
+4. 分清这次是哪种工作，适用的规则不同：
 
-## 三条不能违反的约束
+| 工作 | 适用的规则 |
+| --- | --- |
+| 写新代码，或重写自己负责的代码 | “始终适用”+“写新代码：编码规范”。按规范一次写对，目标是不产生新的检查问题 |
+| 给已有代码接入本包：处理检查报告、停止后检查报告，排查关闭 Domain Reload 后才出现的问题 | “始终适用”+“接入已有代码：改动边界”。尽量少改业务 |
 
-1. **不影响打包后的逻辑。** 业务代码只允许：
-   - 在**已有**成员上加特性：`[ResetStatic]`、`[ResetMethod]`、`[OnExitPlayMode]`、`[ReloadSafe("原因")]`，以及为此需要的 `EasyReloadGuard` 程序集引用（asmdef 需手动添加）。
-   - 新增**只在 Editor 编译**的重置方法：方法连同 `[ResetMethod]` 整体放在 `#if UNITY_EDITOR` 中。
-   
-   不要为本包在业务中新增方法、Unity 消息、参数、判断分支，也不要调用 `PlaySession.RegisterReset` 一类的登记接口，不要调整业务的初始化阶段。
-2. **释放是业务自己的事。** 订阅、线程、计时器、Socket、下载、原生资源在打包后切场景、登出时同样要释放。缺少释放是业务缺陷，修业务本身；释放方法已经存在之后，才在它上面加 `[OnExitPlayMode]`。不要为本包新建 `[OnExitPlayMode]` 方法。
-3. **异步由发起者取消。** 不要让任务比发起它的对象活得更久，本包不替业务取消。
+## 始终适用
 
-## 写新代码时：每个静态状态选一种处理
+1. **不影响打包后的逻辑。** 本包在业务代码中只以特性、`#if UNITY_EDITOR` 中的 `[ResetMethod]` 重置方法和 `EasyReloadGuard` 程序集引用（asmdef 需手动添加）的形式出现。运行时流程中不调用本包接口（`PlaySession` 上的方法只给 Editor 工具和调试代码用），不为关闭 Domain Reload 加判断分支或 `#if UNITY_EDITOR` 的流程差异，不调整业务的初始化阶段。
+2. **释放和取消是业务自己的事。** 订阅、线程、计时器、Socket、下载、原生资源在打包后切场景、登出时同样要释放；异步任务不能比发起它的对象活得更久。本包不替业务释放或取消。
+3. **`[OnExitPlayMode]` 只加在业务流程本身也会调用的停止方法上。** 不写只在停止 Play 时才被调用的方法。
 
-先问能不能不用静态：状态放在负责它的对象实例上，随对象创建和销毁，最省事。必须用静态时按下表选择，详细判断见 [references/patterns.md](references/patterns.md)。
+## 写新代码：编码规范
+
+目标：新代码在关闭和开启 Domain Reload 时行为一致，检查不报新问题，不进已知遗留清单。这些规范也是打包后登出重进、切场景、重复初始化的正确写法，所以写新代码时可以按需设计初始化、停止、取消等业务方法，不受“接入已有代码”的改动限制。
+
+1. **先不用静态。** Play 中产生的状态放在负责它的对象实例上（MonoBehaviour，或由启动流程创建并持有的服务），随对象创建和销毁。静态只留给常量、内容不变的计算缓存，以及工程统一的单例和事件中心入口。
+2. **声明时就处理。** 每个可变静态成员写下时就按下表选定处理方式并加上特性，不留没有标注的可变静态；能写成 `const`、`static readonly` 的就写。
+3. **初始化可以重复执行。** 每次 Play 都要做的初始化放在 `Awake`、`Start` 或业务的 `Init` 中，不放在静态构造或字段初值中（关闭 Domain Reload 时只执行一次）。`Init` 重复调用不会重复订阅、重复创建；“已初始化”标记要加 `[ResetStatic]`。
+4. **订阅成对。** `+=` 与 `-=` 写在对称的生命周期中：`OnEnable`/`OnDisable`、`Awake`/`OnDestroy`、`Init`/`Shutdown`。不在静态构造或 `[InitializeOnLoad]` 中订阅运行时事件。
+5. **资源有负责者和停止方法。** 线程、计时器、Socket、下载、原生资源由一个对象创建，并由它的 `Stop`、`Dispose` 或 `Shutdown` 释放。停止方法可以重复调用，由业务的退出流程（销毁、切场景、登出、`Application.quitting`）调用；静态入口的服务给这个停止方法加 `[OnExitPlayMode]`。
+6. **异步由发起者取消。** 发起时取得令牌（`destroyCancellationToken`、服务自己的 `CancellationTokenSource`、`Application.exitCancellationToken`）并沿调用链传递；`await` 之后写状态前检查令牌；不用 `async void`。`Task`、`CancellationTokenSource` 不放在静态字段中，放在负责的实例上，由它的停止方法取消。
+7. **单例沿用工程的基类。** `Instance` 在 `Awake` 中赋值、在 `OnDestroy` 中是自己时置 null，字段加 `[ResetStatic]`。纯 C# 单例由启动流程创建，并配有停止方法。
+8. **分清缓存和 Play 中的状态。** 内容只由输入决定、下一次 Play 仍然正确的计算缓存用 `[ReloadSafe("原因")]`；装了 Play 中对象的对象池、注册表要在下一次 Play 前清空（`Clear` 或重置方法），其中的 Unity 对象已随场景销毁。
+9. **ScriptableObject 不存运行时状态。** 不把 Play 中的数据写回资产实例；需要运行时状态时用 `Instantiate` 出的副本或单独的运行时对象。资产的 `OnEnable` 只在加载时执行一次，不能当作每次 Play 的初始化。
+10. **Editor 代码只在脚本加载时订阅。** `EditorApplication` 等编辑器事件在 `[InitializeOnLoad]` 的静态构造中订阅一次；在每次进入 Play 都会执行的代码中订阅，处理器会越积越多。
+
+完整的服务写法见 [references/patterns.md](references/patterns.md) 第 2 节“新写一个服务”。
+
+## 每个静态状态选一种处理
+
+写新代码和接入已有代码都按下表选择，详细判断见 [references/patterns.md](references/patterns.md)。
 
 | 静态状态 | 处理 |
 | --- | --- |
@@ -49,6 +68,17 @@ description: "在接入了 Easy Reload Guard（com.yongshi.easyreloadguard）的
 - 用类型级、程序集级 `[ReloadSafe]`，或整批记为已知遗留，来掩盖没确认过的问题。
 - 手改生成代码：改生成模板或生成器。
 
+## 接入已有代码：改动边界
+
+已有代码以“少改业务、不改流程”为准：
+
+1. 业务代码只允许：
+   - 在**已有**成员上加特性：`[ResetStatic]`、`[ResetMethod]`、`[OnExitPlayMode]`、`[ReloadSafe("原因")]`，以及为此需要的 `EasyReloadGuard` 程序集引用。
+   - 新增**只在 Editor 编译**的重置方法：方法连同 `[ResetMethod]` 整体放在 `#if UNITY_EDITOR` 中。
+2. 不为本包在业务中新增方法、Unity 消息、参数、判断分支或登记调用（如 `PlaySession.RegisterReset`）。
+3. 订阅不成对、缺少释放、`Init` 不去重是业务缺陷，不是接入问题：先确认开启 Domain Reload 时、打包后登出重进时也会出现，向用户说明后修业务本身；释放方法存在之后，才在它上面加 `[OnExitPlayMode]`。
+4. 不借接入把旧代码顺手改写成新规范；值得重构的地方单独提出，由用户决定。
+
 ## 排查“关闭 Domain Reload 后才出错”
 
 1. 先用开启 Domain Reload、相同的操作复现一次。开启时也会出现，就是原有问题，不归因于本包或 Domain Reload，只记录，不修。
@@ -62,7 +92,7 @@ description: "在接入了 Easy Reload Guard（com.yongshi.easyreloadguard）的
 依次进行，分别报告结果，没做的写“未验证”：
 
 1. 编译通过，Console 没有 `[Easy Reload Guard]` 错误。
-2. 运行检查（菜单 `Tools/Easy Reload Guard/检查静态变量并查看结果`，或命令行 `-executeMethod EasyReloadGuard.Editor.ReloadGuardCli.Audit`）：没有新的错误或警告，没有“特性用法错误”“已加的重置会破坏下一次 Play”“重置方法漏掉了字段”。
+2. 运行检查（菜单 `Tools/Easy Reload Guard/检查静态变量并查看结果`，或命令行 `-executeMethod EasyReloadGuard.Editor.ReloadGuardCli.Audit`）：没有新的错误或警告，没有“特性用法错误”“已加的重置会破坏下一次 Play”“重置方法漏掉了字段”。新代码的问题要改代码，不记为已知遗留。
 3. 关闭 Domain Reload、保持 Scene Reload 开启，在同一次脚本加载内连续 Play → Stop 至少 2 轮，期间不改代码、不重新编译。看 `Library/EasyReloadGuard/ResidueReport.md`：没有“仍引用已销毁的对象”，没有“比上次停止时增加”。
 4. 走到改动涉及的入口（登出重进、加载中途停止、下载中停止等）。主流程通过不代表这些入口通过。
 

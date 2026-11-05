@@ -20,6 +20,67 @@
 
 ## 2. 常见写法
 
+### 新写一个服务
+
+写新代码时按这个结构：一个负责者、可以重复调用的启动和停止、成对订阅、令牌沿调用链传递。停止方法是业务本身就需要的（登出、切场景、`Application.quitting` 时调用），所以可以新写，并加 `[OnExitPlayMode]`。
+
+```csharp
+public sealed class ChatService
+{
+    [field: ResetStatic] public static ChatService Current { get; private set; }
+
+    CancellationTokenSource m_Cts;
+
+    // 启动流程调用；重复调用不会重复订阅
+    public static void Start()
+    {
+        if (Current == null) Current = new ChatService();
+        Current.Begin();
+    }
+
+    // 业务的登出、切场景、Application.quitting 都调用它；可以重复调用
+    [OnExitPlayMode]
+    public static void Shutdown()
+    {
+        var service = Current;
+        if (service == null) return;
+        Network.Received -= service.OnReceived;
+        service.m_Cts?.Cancel();
+        service.m_Cts?.Dispose();
+        service.m_Cts = null;
+        Current = null;
+    }
+
+    void Begin()
+    {
+        if (m_Cts != null) return;            // 已在运行
+        m_Cts = new CancellationTokenSource();
+        Network.Received += OnReceived;       // 与 Shutdown 中的 -= 成对
+        _ = PollAsync(m_Cts.Token);
+    }
+
+    async Task PollAsync(CancellationToken token)
+    {
+        try
+        {
+            while (true)
+            {
+                var message = await Network.FetchAsync(token);
+                token.ThrowIfCancellationRequested();   // 已停止：不写回
+                OnReceived(message);
+            }
+        }
+        catch (OperationCanceledException) { }          // 停止时以取消结束
+    }
+
+    void OnReceived(string message) { }
+}
+```
+
+- 状态（令牌、订阅）在实例上，静态只有入口 `Current`。
+- 初始化放在 `Start` 中，不放在静态构造中：关闭 Domain Reload 时静态构造只执行一次。
+- MonoBehaviour 发起的任务直接用 `destroyCancellationToken`，订阅写在 `OnEnable`/`OnDisable`，不需要 `[OnExitPlayMode]`。
+
 ### 单例与普通字段
 
 ```csharp
@@ -128,7 +189,10 @@ public static class ProfileLoader
 
 ### ScriptableObject 等只执行一次 OnEnable 的实例状态
 
-特性只处理静态成员。在 Editor 适配器中用 `OnReset` 找到已加载的实例，调用它已有的入口（例如重新执行初始化），效果等同于开启 Domain Reload。不要在业务的 `OnEnable` 中加登记代码。
+资产的 `OnEnable` 只在加载时执行一次，关闭 Domain Reload 后不会每次 Play 都执行。
+
+- 新代码：不把 Play 中的数据写回资产实例。需要运行时状态时，在使用方的初始化中 `Instantiate` 一份副本，或把状态放到单独的运行时对象上。
+- 已有代码：特性只处理静态成员。在 Editor 适配器中用 `OnReset` 找到已加载的实例，调用它已有的入口（例如重新执行初始化），效果等同于开启 Domain Reload。不要在业务的 `OnEnable` 中加登记代码。
 
 ## 3. Editor 适配器
 

@@ -9,11 +9,11 @@
 
 使用 Agent Skill `easy-reload-guard`，源文件在本包 [Skills~/easy-reload-guard](Skills~/easy-reload-guard/SKILL.md)。安装方式：`Project Settings/Easy Reload Guard` 的“Agent Skill”分组，或菜单 `Tools/Easy Reload Guard/安装或更新 Agent Skill`，会复制到 `~/.claude/skills/easy-reload-guard` 与 `~/.codex/skills/easy-reload-guard`。Skill 内容变化后（按内容哈希判断，不依赖包版本号），设置页和 Console 会提示重新安装。
 
-不使用 Skill 时，至少遵守这三条（细节见 README 第 2 节）：
+不使用 Skill 时，至少遵守以下几条（细节见 README 第 2 节）：
 
-1. 业务代码只在已有成员上加特性，或在 `#if UNITY_EDITOR` 中新增 `[ResetMethod]` 重置方法；不为本包新增业务方法、分支、登记调用。
-2. 订阅、线程、资源的释放是业务自己的事，`[OnExitPlayMode]` 只加在已有的停止方法上。
-3. 异步任务由发起者取消。
+1. 始终适用：本包在业务代码中只以特性、`#if UNITY_EDITOR` 中的 `[ResetMethod]` 重置方法和程序集引用出现，运行时流程不调用本包接口；订阅、线程、资源的释放与异步取消由业务负责；`[OnExitPlayMode]` 只加在业务流程本身也会调用的停止方法上。
+2. 写新代码：按 README 2.2 的编码规范一次写对（状态放实例、可变静态声明时就加特性、初始化可重复、订阅成对、资源有停止方法、令牌沿调用链传递），不产生新的检查问题。
+3. 接入已有代码：只在已有成员上加特性，或新增 Editor 重置方法；不为本包新增业务方法、分支、登记调用；业务缺陷确认后修业务本身。
 
 ## 目录
 
